@@ -97,7 +97,12 @@ fn calculate_weights_inner(y_0: f64, dy_dx: f64, w: usize, h: usize) -> Vec<(usi
 // Calculate the weights along the infinite line passing through (x1,
 // y1) and (x2, y2), with |dy/dx| <= 1. The pixel grid is at (0..w,
 // 0..h) ("pixel space").
-fn calculate_weights_horiz((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+fn calculate_weights_horiz(
+    (x1, y1): (f64, f64),
+    (x2, y2): (f64, f64),
+    w: usize,
+    h: usize,
+) -> Vec<(usize, usize, f64)> {
     // Safe as | dy/dx | <= 1.0.
     let dy_dx = (y2 - y1) / (x2 - x1);
 
@@ -109,14 +114,22 @@ fn calculate_weights_horiz((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize,
 // Calculate the weights along the infinite line passing through (x1,
 // y1) and (x2, y2). The pixel grid is at (0..w, 0..h) ("pixel
 // space").
-fn calculate_pixel_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+fn calculate_pixel_weights(
+    (x1, y1): (f64, f64),
+    (x2, y2): (f64, f64),
+    w: usize,
+    h: usize,
+) -> Vec<(usize, usize, f64)> {
     let dx = (x2 - x1).abs();
     let dy = (y2 - y1).abs();
 
     if dy > dx {
         // Would result in | dy/dx | > 1, so flip axes.
         let flipped_results = calculate_weights_horiz((y1, x1), (y2, x2), h, w);
-        flipped_results.iter().map(|(y, x, w)| (*x, *y, *w)).collect()
+        flipped_results
+            .iter()
+            .map(|(y, x, w)| (*x, *y, *w))
+            .collect()
     } else {
         calculate_weights_horiz((x1, y1), (x2, y2), w, h)
     }
@@ -125,7 +138,12 @@ fn calculate_pixel_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize,
 // Calculate the weights along the infinite line passing through (x1,
 // y1) and (x2, y2). The pixel grid is at (-1.0..1.0, -1.0..1.0)
 // ("scan space").
-fn calculate_scan_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+fn calculate_scan_weights(
+    (x1, y1): (f64, f64),
+    (x2, y2): (f64, f64),
+    w: usize,
+    h: usize,
+) -> Vec<(usize, usize, f64)> {
     // This is a simple matter of coordinate transforms. We move (-1, -1)
     // to the origin, and then scale (0.0..2.0, 0.0..2.0) to (0.0..w,
     // 0.0..h).
@@ -140,12 +158,63 @@ fn calculate_scan_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, 
 }
 
 ////////////////////////////////////////////////////////////////////////
+// Image transformation
+//
+
+// Convert the image into a transformed version, where the returned vector
+// is a flattened array of (outer layer) different angles with (inner layer)
+// parallel rays.
+//
+// 'angles' returns how many angles are scanned, over a 180 degree range
+// (only 180 degrees is needed due to symmetry)
+// 'rays' counts how many parallel rays will be spread over the object.
+fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
+    // We could just construct a great big matrix and apply that to
+    // image.data, but given the inverse transformation is going to be
+    // an inverse of that matrix, that feels a bit cheaty. So we'll
+    // do the forwards transformation by hand.
+    assert!(angles > 1);
+    assert!(rays > 1);
+    let mut res = Vec::new();
+    let angle_step = std::f64::consts::PI / (angles - 1) as f64;
+    // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
+    let ray_offset = 2_f64.sqrt();
+    let ray_step = 2.0 * ray_offset / (rays - 1) as f64;
+    for angle in (0..angles).map(|x| x as f64 * angle_step) {
+        let axis_start = (angle.cos(), angle.sin());
+        let axis_end = (-axis_start.0, -axis_start.1);
+        for ray in (0..rays).map(|x| x as f64 * ray_step - ray_offset) {
+            // Rays are paralell, so move end points at a normal.
+            let parallel_offset = (ray * -axis_start.1, ray * axis_start.0);
+            let ray_start = (
+                axis_start.0 + parallel_offset.0,
+                axis_start.1 + parallel_offset.1,
+            );
+            let ray_end = (
+                axis_end.0 + parallel_offset.0,
+                axis_end.1 + parallel_offset.1,
+            );
+
+            let weights = calculate_scan_weights(ray_start, ray_end, image.width, image.height);
+            let integral = weights
+                .iter()
+                .map(|(x, y, w)| image.data[y * image.width + x] as f64 * w)
+                .sum();
+            res.push(integral);
+        }
+    }
+
+    res
+}
+
+////////////////////////////////////////////////////////////////////////
 // Main entry point
 //
 
 fn main() {
     let src_img = image_load(Path::new("images/test.png"));
     print!("Processing... ");
+    scan(&src_img, 5, 7);
     let dst_img = src_img;
     println!("done!");
     image_save(Path::new("results/test.png"), dst_img);
@@ -264,7 +333,7 @@ mod tests {
         ];
         let actual = calculate_scan_weights((-2.0, -1.0), (2.0, 1.0), 10, 5);
         assert_eq_pixels(&expected, &actual);
-     }
+    }
 
     #[test]
     fn test_scan_weights_v() {
@@ -286,11 +355,101 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_commutes() {
+    fn test_scan_weights_commutes() {
         let p1 = (0.2, 0.9);
         let p2 = (0.5, 0.1);
         let res1 = calculate_scan_weights(p1, p2, 10, 5);
         let res2 = calculate_scan_weights(p2, p1, 10, 5);
         assert_eq!(res1, res2);
+    }
+
+    #[test]
+    fn test_scan_blank() {
+        let image = TomoImage {
+            width: 1,
+            height: 1,
+            data: DVector::from_element(1, 0),
+        };
+        let scanned = scan(&image, 5, 7);
+        assert_eq!(scanned.len(), 5 * 7);
+        assert!(scanned.iter().all(|x| *x == 0.0))
+    }
+
+    #[test]
+    fn test_scan_full() {
+        let image = TomoImage {
+            width: 1,
+            height: 1,
+            data: DVector::from_element(1, 1),
+        };
+        let expected = vec![
+            // Horizontal
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0,
+            // Diagonal
+            0.0,
+            2_f64.sqrt() / 3.0,
+            2_f64.sqrt() * 2.0 / 3.0,
+            2_f64.sqrt(),
+            2_f64.sqrt() * 2.0 / 3.0,
+            2_f64.sqrt() / 3.0,
+            0.0,
+            // Vertical
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0,
+            // Diagonal
+            0.0,
+            2_f64.sqrt() / 3.0,
+            2_f64.sqrt() * 2.0 / 3.0,
+            2_f64.sqrt(),
+            2_f64.sqrt() * 2.0 / 3.0,
+            2_f64.sqrt() / 3.0,
+            0.0,
+            // Horizontal, other way.
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0,
+        ];
+        let actual = scan(&image, 5, 7);
+        assert_eq!(expected.len(), actual.len());
+        for (e, a) in expected.iter().zip(actual.iter()) {
+            assert!((e - a).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn test_scan_scales() {
+        let image1 = TomoImage {
+            width: 1,
+            height: 1,
+            data: DVector::from_element(1, 1),
+        };
+        let scan1 = scan(&image1, 5, 7);
+
+        let image2 = TomoImage {
+            width: 5,
+            height: 5,
+            data: DVector::from_element(8 * 8, 1),
+        };
+        let scan2 = scan(&image2, 5, 7);
+
+        assert_eq!(scan1.len(), scan2.len());
+        for (s1, s2) in scan1.iter().zip(scan2.iter()) {
+            assert!((s1 - s2).abs() < 1e-14);
+        }
     }
 }
