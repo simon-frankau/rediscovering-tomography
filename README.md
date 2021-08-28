@@ -102,6 +102,13 @@ output data. It doesn't really add anything as far as I care. I'm
 using `nalgebra` to do the matrix inversion, and `image` to load and
 save the images being transformed.
 
+To calculate the weights along the paths as they traverse the pixels,
+I'm doing something akin to old-school scan conversion. I'm making my
+own vectors for this, as using a full 2D vector class just feels like
+overkill. The model is that the pixels are solid squares, and the line
+is of zero width, and we want to know how long the line segment that
+crosses each pixel is.
+
 TODO: Implement, test, explore further.
 
 TODO: Also, it'd be nice if it had a decent command line interface and
