@@ -50,7 +50,12 @@ fn calculate_weights_inner(y_0: f64, dy_dx: f64, w: usize, h: usize) -> Vec<(usi
     // Crossing a single pixel, left-to-right, without crossing a vertical
     // pixel boundary, has a basic distance. Boundary-crossing path lengths
     // can be derived from this.
-    let base_weight = (1.0 + dy_dx * dy_dx).sqrt();
+    //
+    // This is chosen so that crossing the whole pixel area, either
+    // vertically or horizontally, is 1 unit.
+    let (wf64, hf64) = (w as f64, h as f64);
+    let (y_scale, x_scale) = ((1.0 / (hf64 * hf64)), (1.0 / (wf64 * wf64)));
+    let base_weight = (x_scale + dy_dx * dy_dx * y_scale).sqrt();
 
     let mut weights: Vec<(usize, usize, f64)> = Vec::new();
 
@@ -89,12 +94,50 @@ fn calculate_weights_inner(y_0: f64, dy_dx: f64, w: usize, h: usize) -> Vec<(usi
     weights
 }
 
-// TODO: Calculate weights in pixel space, from start point and direction.
-// knowing |dy/dx| < 1
+// Calculate the weights along the infinite line passing through (x1,
+// y1) and (x2, y2), with |dy/dx| <= 1. The pixel grid is at (0..w,
+// 0..h) ("pixel space").
+fn calculate_weights_horiz((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+    // Safe as | dy/dx | <= 1.0.
+    let dy_dx = (y2 - y1) / (x2 - x1);
 
-// TODO: Calculate weights in pixel space from start point and direction.
+    let y_0 = y1 - x1 * dy_dx;
 
-// TODO: Calculate weights in scan space, from start point and direction.
+    calculate_weights_inner(y_0, dy_dx, w, h)
+}
+
+// Calculate the weights along the infinite line passing through (x1,
+// y1) and (x2, y2). The pixel grid is at (0..w, 0..h) ("pixel
+// space").
+fn calculate_pixel_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+    let dx = (x2 - x1).abs();
+    let dy = (y2 - y1).abs();
+
+    if dy > dx {
+        // Would result in | dy/dx | > 1, so flip axes.
+        let flipped_results = calculate_weights_horiz((y1, x1), (y2, x2), h, w);
+        flipped_results.iter().map(|(y, x, w)| (*x, *y, *w)).collect()
+    } else {
+        calculate_weights_horiz((x1, y1), (x2, y2), w, h)
+    }
+}
+
+// Calculate the weights along the infinite line passing through (x1,
+// y1) and (x2, y2). The pixel grid is at (-1.0..1.0, -1.0..1.0)
+// ("scan space").
+fn calculate_scan_weights((x1, y1): (f64, f64), (x2, y2): (f64, f64), w: usize, h: usize) -> Vec<(usize, usize, f64)> {
+    // This is a simple matter of coordinate transforms. We move (-1, -1)
+    // to the origin, and then scale (0.0..2.0, 0.0..2.0) to (0.0..w,
+    // 0.0..h).
+    let x1p = (x1 + 1.0) * (w as f64 / 2.0);
+    let y1p = (y1 + 1.0) * (h as f64 / 2.0);
+    let x2p = (x2 + 1.0) * (w as f64 / 2.0);
+    let y2p = (y2 + 1.0) * (h as f64 / 2.0);
+
+    // The resulting weights, based on pixel coordinates, don't need
+    // to be transformed back, as that's the format we want.
+    calculate_pixel_weights((x1p, y1p), (x2p, y2p), w, h)
+}
 
 ////////////////////////////////////////////////////////////////////////
 // Main entry point
@@ -127,10 +170,9 @@ mod tests {
         }
     }
 
-    // fn calculate_weights_inner(y_0: f64, dy_dx: f64, w: usize, h:usize) -> Vec<(usize, usize, f64)> {
     #[test]
     fn test_calc_weights_inner_horizontal() {
-        let expected = (0..10).map(|x| (x, 2, 1.0)).collect::<Vec<_>>();
+        let expected = (0..10).map(|x| (x, 2, 0.1)).collect::<Vec<_>>();
         let actual = calculate_weights_inner(2.5, 0.0, 10, 5);
         assert_eq_pixels(&expected, &actual);
     }
@@ -138,13 +180,13 @@ mod tests {
     #[test]
     fn test_calc_weights_inner_up() {
         // 'base' = length travelled as we move 1 unit in X direction.
-        let base = 0.5_f64.sqrt();
+        let base = (0.1f64 * 0.1 + 0.2 * 0.2).sqrt();
         let expected = vec![
-            (0, 2, base),
-            (0, 3, base),
-            (1, 3, base),
-            (1, 4, base),
-            (2, 4, base),
+            (0, 2, base * 0.5),
+            (0, 3, base * 0.5),
+            (1, 3, base * 0.5),
+            (1, 4, base * 0.5),
+            (2, 4, base * 0.5),
         ];
         let actual = calculate_weights_inner(2.5, 1.0, 10, 5);
         assert_eq_pixels(&expected, &actual);
@@ -153,18 +195,18 @@ mod tests {
     #[test]
     fn test_calc_weights_inner_down() {
         // 'base' = length travelled as we move 1 unit in X direction.
-        let base = 0.5_f64.sqrt();
+        let base = (0.1f64 * 0.1 + 0.2 * 0.2).sqrt();
         let expected = vec![
-            (2, 4, base),
-            (3, 4, base),
-            (3, 3, base),
-            (4, 3, base),
-            (4, 2, base),
-            (5, 2, base),
-            (5, 1, base),
-            (6, 1, base),
-            (6, 0, base),
-            (7, 0, base),
+            (2, 4, base * 0.5),
+            (3, 4, base * 0.5),
+            (3, 3, base * 0.5),
+            (4, 3, base * 0.5),
+            (4, 2, base * 0.5),
+            (5, 2, base * 0.5),
+            (5, 1, base * 0.5),
+            (6, 1, base * 0.5),
+            (6, 0, base * 0.5),
+            (7, 0, base * 0.5),
         ];
         let actual = calculate_weights_inner(7.5, -1.0, 10, 5);
         assert_eq_pixels(&expected, &actual);
@@ -178,7 +220,7 @@ mod tests {
     #[test]
     fn test_calc_weights_inner_non_diagonal_up() {
         // 'base' = length travelled as we move 1 unit in X direction.
-        let base = 1.25;
+        let base = (0.2f64 * 0.2 + 0.15 * 0.15).sqrt();
         let expected = vec![
             (0, 2, base * 2.0 / 3.0),
             (0, 3, base / 3.0),
@@ -186,7 +228,69 @@ mod tests {
             (2, 4, base),
             (3, 4, base / 3.0),
         ];
-        let actual = calculate_weights_inner(2.5, 0.75, 10, 5);
+        let actual = calculate_weights_inner(2.5, 0.75, 5, 5);
         assert_eq_pixels(&expected, &actual);
+    }
+
+    #[test]
+    fn test_calc_weights_inner_non_diagonal_down() {
+        // 'base' = length travelled as we move 1 unit in X direction.
+        let base = (0.2f64 * 0.2 + 0.15 * 0.15).sqrt();
+        let expected = vec![
+            (0, 2, base * 2.0 / 3.0),
+            (0, 1, base / 3.0),
+            (1, 1, base),
+            (2, 0, base),
+            (3, 0, base / 3.0),
+        ];
+        let actual = calculate_weights_inner(2.5, -0.75, 5, 5);
+        assert_eq_pixels(&expected, &actual);
+    }
+
+    #[test]
+    fn test_scan_weights_h() {
+        let base = (1.0f64 * 1.0 + 0.5 * 0.5).sqrt() / 10.0;
+        let expected = vec![
+            (0, 1, base),
+            (1, 1, base),
+            (2, 1, base),
+            (3, 2, base),
+            (4, 2, base),
+            (5, 2, base),
+            (6, 2, base),
+            (7, 3, base),
+            (8, 3, base),
+            (9, 3, base),
+        ];
+        let actual = calculate_scan_weights((-2.0, -1.0), (2.0, 1.0), 10, 5);
+        assert_eq_pixels(&expected, &actual);
+     }
+
+    #[test]
+    fn test_scan_weights_v() {
+        let base = (1.0f64 * 1.0 + 0.5 * 0.5).sqrt() / 10.0;
+        let expected = vec![
+            (2, 0, base),
+            (3, 0, base),
+            (3, 1, base),
+            (4, 1, base),
+            (4, 2, base),
+            (5, 2, base),
+            (5, 3, base),
+            (6, 3, base),
+            (6, 4, base),
+            (7, 4, base),
+        ];
+        let actual = calculate_scan_weights((-1.0, -2.0), (1.0, 2.0), 10, 5);
+        assert_eq_pixels(&expected, &actual);
+    }
+
+    #[test]
+    fn test_scan_commutes() {
+        let p1 = (0.2, 0.9);
+        let p2 = (0.5, 0.1);
+        let res1 = calculate_scan_weights(p1, p2, 10, 5);
+        let res2 = calculate_scan_weights(p2, p1, 10, 5);
+        assert_eq!(res1, res2);
     }
 }
