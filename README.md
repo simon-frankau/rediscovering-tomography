@@ -109,6 +109,13 @@ overkill. The model is that the pixels are solid squares, and the line
 is of zero width, and we want to know how long the line segment that
 crosses each pixel is.
 
+I then use that to build the data for sets of parallel rays at a bunch
+of different angles. If I plot this data as an image, you can see
+sinusoids that represent a chunk of matter rotating round. The phase
+and amplitude represent the angle and radius of that piece of mass.
+(Perhaps this implies a smarter algorithm for inverting the
+transform?)
+
 TODO: Implement, test, explore further.
 
 TODO: Also, it'd be nice if it had a decent command line interface and

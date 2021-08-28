@@ -207,6 +207,17 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
     res
 }
 
+// Converts a scan to an image and saves it, perhaps useful for understanding the transform.
+fn scan_save(path: &Path, angles: usize, rays: usize, data: &[f64]) {
+    let image = TomoImage {
+        width: rays,
+        height: angles,
+        data: DVector::from_iterator(rays * angles, data.iter().map(|x| (x / 2_f64.sqrt()) as u8)),
+    };
+
+   image_save(path, image);
+}
+
 ////////////////////////////////////////////////////////////////////////
 // Main entry point
 //
@@ -214,10 +225,11 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
 fn main() {
     let src_img = image_load(Path::new("images/test.png"));
     print!("Processing... ");
-    scan(&src_img, 5, 7);
+    let scan = scan(&src_img, 100, 200);
     let dst_img = src_img;
     println!("done!");
     image_save(Path::new("results/test.png"), dst_img);
+    scan_save(Path::new("results/test_scan.png"), 100, 200, &scan);
 }
 
 ////////////////////////////////////////////////////////////////////////
