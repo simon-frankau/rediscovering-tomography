@@ -2,7 +2,7 @@ extern crate image;
 extern crate nalgebra;
 
 use image::{GrayImage, Pixel};
-use nalgebra::base::DVector;
+use nalgebra::base::{DMatrix, DVector};
 use std::path::Path;
 
 ////////////////////////////////////////////////////////////////////////
@@ -128,7 +128,7 @@ fn calculate_pixel_weights(
         let flipped_results = calculate_weights_horiz((y1, x1), (y2, x2), h, w);
         flipped_results
             .iter()
-            .map(|(y, x, w)| (*x, *y, *w))
+            .map(|(y, x, wt)| (*x, *y, *wt))
             .collect()
     } else {
         calculate_weights_horiz((x1, y1), (x2, y2), w, h)
@@ -198,7 +198,7 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
             let weights = calculate_scan_weights(ray_start, ray_end, image.width, image.height);
             let integral = weights
                 .iter()
-                .map(|(x, y, w)| image.data[y * image.width + x] as f64 * w)
+                .map(|(x, y, wt)| image.data[y * image.width + x] as f64 * wt)
                 .sum();
             res.push(integral);
         }
@@ -217,6 +217,57 @@ fn scan_save(path: &Path, angles: usize, rays: usize, data: &[f64]) {
 
    image_save(path, image);
 }
+
+////////////////////////////////////////////////////////////////////////
+// Image reconstruction
+//
+
+fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usize) -> DMatrix<f64> {
+    let src_dim = width * height;
+    let dst_dim = angles * rays;
+
+    let mut res = DMatrix::from_element(dst_dim, src_dim, 0.0f64);
+
+    // Construction of rays of copy-and-paste from "scan"...
+    assert!(angles > 1);
+    assert!(rays > 1);
+    let angle_step = std::f64::consts::PI / (angles - 1) as f64;
+    // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
+    let ray_offset = 2_f64.sqrt();
+    let ray_step = 2.0 * ray_offset / (rays - 1) as f64;
+    for angle_num in 0..angles {
+        let angle = angle_num as f64 * angle_step;
+
+        let axis_start = (angle.cos(), angle.sin());
+        let axis_end = (-axis_start.0, -axis_start.1);
+        for ray_num in 0..rays {
+            let ray = ray_num as f64 * ray_step - ray_offset;
+
+            // Rays are parallel, so move end points at a normal.
+            let parallel_offset = (ray * -axis_start.1, ray * axis_start.0);
+            let ray_start = (
+                axis_start.0 + parallel_offset.0,
+                axis_start.1 + parallel_offset.1,
+            );
+            let ray_end = (
+                axis_end.0 + parallel_offset.0,
+                axis_end.1 + parallel_offset.1,
+            );
+
+            let dst_row = angle_num * rays + ray_num;
+            for (x, y, wt) in calculate_scan_weights(ray_start, ray_end, width, height) {
+                let src_col = y * width + x;
+                res[(dst_row, src_col)] += wt;
+            }
+        }
+    }
+
+    res
+}
+
+// TODO: Perform the matrix inversion, and test if it works.
+
+// TODO: Then, add noise
 
 ////////////////////////////////////////////////////////////////////////
 // Main entry point
@@ -453,8 +504,8 @@ mod tests {
         let scan1 = scan(&image1, 5, 7);
 
         let image2 = TomoImage {
-            width: 5,
-            height: 5,
+            width: 8,
+            height: 8,
             data: DVector::from_element(8 * 8, 1),
         };
         let scan2 = scan(&image2, 5, 7);
@@ -462,6 +513,26 @@ mod tests {
         assert_eq!(scan1.len(), scan2.len());
         for (s1, s2) in scan1.iter().zip(scan2.iter()) {
             assert!((s1 - s2).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn test_forwards_matrix_construction() {
+        let rays = 75;
+        let angles = 50;
+
+        let src_img = image_load(Path::new("images/test.png"));
+        let src_data: DMatrix<f64> = nalgebra::convert(src_img.data.clone());
+
+        let matrix = generate_forwards_matrix(src_img.width, src_img.height, angles, rays);
+
+        let matrixed = (matrix * src_data).iter().copied().collect::<Vec<_>>();
+        let scanned = scan(&src_img, angles, rays);
+
+        assert_eq!(scanned.len(), matrixed.len());
+        for (s1, s2) in scanned.iter().zip(matrixed.iter()) {
+            // Slightly larger epsilon for this one, since more operations are applied.
+            assert!((s1 - s2).abs() < 1e-10);
         }
     }
 }
