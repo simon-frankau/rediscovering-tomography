@@ -116,7 +116,12 @@ and amplitude represent the angle and radius of that piece of mass.
 (Perhaps this implies a smarter algorithm for inverting the
 transform?)
 
-TODO: Implement, test, explore further.
+Finding the pseudo-inverse of the matrix and applying it... works!
+Hurrah. Interestingly, the size of the error seems to vary quite a lot
+with the number of path samples, so this looks like it'll be worth
+some investigation.
+
+TODO: Test and explore further.
 
 TODO: Also, it'd be nice if it had a decent command line interface and
 error handling. It's kind of optional for this toy-level tool, but

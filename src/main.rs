@@ -265,22 +265,43 @@ fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usi
     res
 }
 
-// TODO: Perform the matrix inversion, and test if it works.
+fn generate_inverse_matrix(width: usize, height: usize, angles:usize, rays: usize) -> DMatrix<f64> {
+    let forwards = generate_forwards_matrix(width, height, angles, rays);
+    forwards.pseudo_inverse(1e-6).unwrap()
+}
 
-// TODO: Then, add noise
+fn reconstruct(data: &[f64], width: usize, height: usize, angles:usize, rays: usize) -> TomoImage {
+    let matrix = generate_inverse_matrix(width, height, angles, rays);
+    let input: DVector<f64> = DVector::from_iterator(angles * rays, data.iter().copied());
+    let reconstruction = matrix * input;
+    let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, reconstruction
+        .iter()
+        .map(|x| x.max(0.0).min(255.0) as u8));
+
+    TomoImage { width, height, data: recon_as_u8 }
+}
+
+// TODO: See what effect adding noise and changing rays/angles has on
+// accuracy.
 
 ////////////////////////////////////////////////////////////////////////
 // Main entry point
 //
 
 fn main() {
+    // Choose numbers different from the image dimensions, to
+    // avoid missing bugs.
+    let rays = 35;
+    let angles = 40;
+
     let src_img = image_load(Path::new("images/test.png"));
     print!("Processing... ");
-    let scan = scan(&src_img, 100, 200);
-    let dst_img = src_img;
+    let scan = scan(&src_img, angles, rays);
+    let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
     println!("done!");
+
     image_save(Path::new("results/test.png"), dst_img);
-    scan_save(Path::new("results/test_scan.png"), 100, 200, &scan);
+    scan_save(Path::new("results/test_scan.png"), angles, rays, &scan);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -535,4 +556,56 @@ mod tests {
             assert!((s1 - s2).abs() < 1e-10);
         }
     }
-}
+
+    // This test takes 20s on my old Macbook, so let's not run by default.
+    #[ignore]
+    #[test]
+    fn test_end_to_end_expensive() {
+        // Choose numbers different from the image dimensions, to
+        // avoid missing bugs.
+        let rays = 35;
+        let angles = 40;
+
+        let src_img = image_load(Path::new("images/test.png"));
+        let scan = scan(&src_img, angles, rays);
+        let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
+
+        let total_error: f64 = src_img.data
+            .iter()
+            .zip(dst_img.data.iter())
+            .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
+            .sum();
+
+        let average_error = total_error / (dst_img.width * dst_img.height) as f64;
+
+        // Less than 1/2560 average error!
+        assert!(average_error < 0.1);
+    }
+
+    #[test]
+    fn test_end_to_end_cheap() {
+        let rays = 10;
+        let angles = 10;
+
+        let width = 8;
+        let height = 8;
+        let data = DVector::from_fn(8 * 8, |p, _| {
+            let (x, y) = (p % 8, p / 8);
+            (x * 8 + if y >= 4 { 64 } else { 0 }) as u8
+            });
+
+        let src_img = TomoImage { width, height, data };
+        let scan = scan(&src_img, angles, rays);
+        let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
+
+        let total_error: f64 = src_img.data
+            .iter()
+            .zip(dst_img.data.iter())
+            .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
+            .sum();
+
+        let average_error = total_error / (dst_img.width * dst_img.height) as f64;
+
+        assert!(average_error < 0.5);
+    }
+ }
