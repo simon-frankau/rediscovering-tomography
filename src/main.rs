@@ -173,10 +173,10 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
     // image.data, but given the inverse transformation is going to be
     // an inverse of that matrix, that feels a bit cheaty. So we'll
     // do the forwards transformation by hand.
-    assert!(angles > 1);
+    assert!(angles > 0);
     assert!(rays > 1);
     let mut res = Vec::new();
-    let angle_step = std::f64::consts::PI / (angles - 1) as f64;
+    let angle_step = std::f64::consts::PI / angles as f64;
     // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
     let ray_offset = 2_f64.sqrt();
     let ray_step = 2.0 * ray_offset / (rays - 1) as f64;
@@ -229,9 +229,10 @@ fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usi
     let mut res = DMatrix::from_element(dst_dim, src_dim, 0.0f64);
 
     // Construction of rays of copy-and-paste from "scan"...
-    assert!(angles > 1);
+    assert!(angles > 0);
     assert!(rays > 1);
-    let angle_step = std::f64::consts::PI / (angles - 1) as f64;
+    // Avoid 180 degree case, as it's same as 0.
+    let angle_step = std::f64::consts::PI / angles as f64;
     // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
     let ray_offset = 2_f64.sqrt();
     let ray_step = 2.0 * ray_offset / (rays - 1) as f64;
@@ -295,10 +296,20 @@ fn main() {
     let angles = 40;
 
     let src_img = image_load(Path::new("images/test.png"));
-    print!("Processing... ");
+    eprint!("Processing... ");
     let scan = scan(&src_img, angles, rays);
     let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
-    println!("done!");
+    eprintln!("done!");
+
+    let total_error: f64 = src_img.data
+        .iter()
+        .zip(dst_img.data.iter())
+        .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
+        .sum();
+
+    let average_error = total_error / (dst_img.width * dst_img.height) as f64;
+
+    println!("Average per-pixel error: {}", average_error);
 
     image_save(Path::new("results/test.png"), dst_img);
     scan_save(Path::new("results/test_scan.png"), angles, rays, &scan);
@@ -454,8 +465,8 @@ mod tests {
             height: 1,
             data: DVector::from_element(1, 0),
         };
-        let scanned = scan(&image, 5, 7);
-        assert_eq!(scanned.len(), 5 * 7);
+        let scanned = scan(&image, 4, 7);
+        assert_eq!(scanned.len(), 4 * 7);
         assert!(scanned.iter().all(|x| *x == 0.0))
     }
 
@@ -499,16 +510,8 @@ mod tests {
             2_f64.sqrt() * 2.0 / 3.0,
             2_f64.sqrt() / 3.0,
             0.0,
-            // Horizontal, other way.
-            0.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            0.0,
         ];
-        let actual = scan(&image, 5, 7);
+        let actual = scan(&image, 4, 7);
         assert_eq!(expected.len(), actual.len());
         for (e, a) in expected.iter().zip(actual.iter()) {
             assert!((e - a).abs() < 1e-14);
@@ -522,14 +525,14 @@ mod tests {
             height: 1,
             data: DVector::from_element(1, 1),
         };
-        let scan1 = scan(&image1, 5, 7);
+        let scan1 = scan(&image1, 4, 7);
 
         let image2 = TomoImage {
             width: 8,
             height: 8,
             data: DVector::from_element(8 * 8, 1),
         };
-        let scan2 = scan(&image2, 5, 7);
+        let scan2 = scan(&image2, 4, 7);
 
         assert_eq!(scan1.len(), scan2.len());
         for (s1, s2) in scan1.iter().zip(scan2.iter()) {
