@@ -1,6 +1,8 @@
+extern crate clap;
 extern crate image;
 extern crate nalgebra;
 
+use clap::{AppSettings, Clap};
 use image::{GrayImage, Pixel};
 use nalgebra::base::{DMatrix, DVector};
 use std::path::Path;
@@ -161,6 +163,12 @@ fn calculate_scan_weights(
 // Image transformation
 //
 
+struct TomoScan {
+    angles: usize,
+    rays: usize,
+    data: Vec<f64>,
+}
+
 // Convert the image into a transformed version, where the returned vector
 // is a flattened array of (outer layer) different angles with (inner layer)
 // parallel rays.
@@ -168,7 +176,7 @@ fn calculate_scan_weights(
 // 'angles' returns how many angles are scanned, over a 180 degree range
 // (only 180 degrees is needed due to symmetry)
 // 'rays' counts how many parallel rays will be spread over the object.
-fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
+fn scan(image: &TomoImage, angles: usize, rays: usize) -> TomoScan {
     // We could just construct a great big matrix and apply that to
     // image.data, but given the inverse transformation is going to be
     // an inverse of that matrix, that feels a bit cheaty. So we'll
@@ -204,18 +212,34 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> Vec<f64> {
         }
     }
 
-    res
+    TomoScan { angles, rays, data: res }
 }
 
-// Converts a scan to an image and saves it, perhaps useful for understanding the transform.
-fn scan_save(path: &Path, angles: usize, rays: usize, data: &[f64]) {
+// Converts a scan to an image and saves it, perhaps useful for
+// understanding the transform.
+fn scan_save(path: &Path, scan: &TomoScan) {
     let image = TomoImage {
-        width: rays,
-        height: angles,
-        data: DVector::from_iterator(rays * angles, data.iter().map(|x| (x / 2_f64.sqrt()) as u8)),
+        width: scan.rays,
+        height: scan.angles,
+        data: DVector::from_iterator(
+            scan.rays * scan.angles,
+            scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8)),
     };
 
    image_save(path, image);
+}
+
+// If we're supporting saving, let's support loading.
+fn scan_load(path: &Path) -> TomoScan {
+    let image = image_load(path);
+    TomoScan {
+        rays: image.width,
+        angles: image.height,
+        data: image.data
+            .iter()
+            .map(|x| *x as f64 * 2_f64.sqrt())
+            .collect(),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -271,9 +295,9 @@ fn generate_inverse_matrix(width: usize, height: usize, angles:usize, rays: usiz
     forwards.pseudo_inverse(1e-6).unwrap()
 }
 
-fn reconstruct(data: &[f64], width: usize, height: usize, angles:usize, rays: usize) -> TomoImage {
-    let matrix = generate_inverse_matrix(width, height, angles, rays);
-    let input: DVector<f64> = DVector::from_iterator(angles * rays, data.iter().copied());
+fn reconstruct(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
+    let matrix = generate_inverse_matrix(width, height, scan.angles, scan.rays);
+    let input: DVector<f64> = DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
     let reconstruction = matrix * input;
     let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, reconstruction
         .iter()
@@ -289,30 +313,131 @@ fn reconstruct(data: &[f64], width: usize, height: usize, angles:usize, rays: us
 // Main entry point
 //
 
-fn main() {
-    // Choose numbers different from the image dimensions, to
-    // avoid missing bugs.
-    let rays = 35;
-    let angles = 40;
+/// This doc string acts as a help message when the user runs '--help'
+/// as do all doc strings on fields
+#[derive(Clap)]
+#[clap(version = "0.1", author = "Simon Frankau <sgf@arbitrary.name>")]
+#[clap(about = "Simple test of tomography algorithms")]
+#[clap(setting = AppSettings::ColoredHelp)]
+struct Opts {
+    /// Input image file, which will be scanned.
+    #[clap(long)]
+    input_image: Option<String>,
+    /// Number of angles to scan from.
+    #[clap(long)]
+    angles: Option<usize>,
+    /// Number of parallel rays fired from each angle.
+    #[clap(long)]
+    rays: Option<usize>,
+    /// Alternatively, read a scan file directly. Incompatible with --input-image.
+    #[clap(long)]
+    input_scan: Option<String>,
+    /// File to write the intermediate scan to.
+    #[clap(long)]
+    output_scan: Option<String>,
+    /// File to write the reconstructed image to
+    #[clap(long)]
+    output_image: Option<String>,
+    /// Width of reconstructed image
+    #[clap(long)]
+    width: Option<usize>,
+    /// Height of reconstructed image
+    #[clap(long)]
+    height: Option<usize>,
+}
 
-    let src_img = image_load(Path::new("images/test.png"));
-    eprint!("Processing... ");
-    let scan = scan(&src_img, angles, rays);
-    let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
-    eprintln!("done!");
+// Generate a scan, and return the image it was generated from, if available.
+fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
+    // TODO: More graceful error handling than assert!/panic!.
 
-    let total_error: f64 = src_img.data
+    if let Some(name) = &opts.input_image {
+        assert!(opts.input_scan.is_none(), "Please specify only one of --input-image and --input-scan");
+
+        let image = image_load(Path::new(&name));
+        let resolution = image.width.max(image.height);
+        let angles = opts.angles.unwrap_or_else(|| {
+            eprintln!("--angles not specified, using {}.", resolution);
+            resolution
+        });
+        let rays = opts.angles.unwrap_or_else(|| {
+            eprintln!("--rays not specified, using {}.", resolution);
+            resolution
+        });
+        let scanned = scan(&image, angles, rays);
+        (Some(image), scanned)
+    } else if let Some(name) = &opts.input_scan {
+        assert!(opts.angles.is_none(), "--angles cannot be used with --input-scan");
+        assert!(opts.rays.is_none(), "--rays cannot be used with --input-scan");
+
+        (None, scan_load(Path::new(&name)))
+    } else {
+        panic!("One of --input-image and --input-scan must be specified");
+    }
+}
+
+fn generate_reconstruction(opts: &Opts, original: &Option<TomoImage>, scan: &TomoScan) -> TomoImage {
+    // When choosing image size, prefer the command-line flag,
+    // otherwise infer from original size, otherwise guess based on
+    // scan size.
+    let resolution = scan.angles.max(scan.rays);
+    let width = opts.width.or(original.as_ref().map(|x| x.width)).unwrap_or_else(|| {
+        eprintln!("No --width or --input-image, using width of {}", resolution);
+        resolution
+    });
+    let height = opts.height.or(original.as_ref().map(|x| x.height)).unwrap_or_else(|| {
+        eprintln!("No --height or --input-image, using height of {}", resolution);
+        resolution
+    });
+
+    reconstruct(&scan, width, height)
+}
+
+fn calculate_error(base_image: &TomoImage, new_image: &TomoImage) {
+    if base_image.width != new_image.width {
+        eprintln!("Base image width does not match reconstructed image width ({} vs. {}). Not calculating error.",
+            base_image.width, new_image.width);
+        return;
+    }
+
+    if base_image.height != new_image.height {
+        eprintln!("Base image height does not match reconstructed image height ({} vs. {}). Not calculating error.",
+            base_image.height, new_image.height);
+        return;
+    }
+
+    let total_error: f64 = base_image.data
         .iter()
-        .zip(dst_img.data.iter())
+        .zip(new_image.data.iter())
         .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
         .sum();
 
-    let average_error = total_error / (dst_img.width * dst_img.height) as f64;
+    let average_error = total_error / (base_image.width * base_image.height) as f64;
 
     println!("Average per-pixel error: {}", average_error);
+}
 
-    image_save(Path::new("results/test.png"), dst_img);
-    scan_save(Path::new("results/test_scan.png"), angles, rays, &scan);
+fn main() {
+    let opts: Opts = Opts::parse();
+
+    let (input_image, scan) = generate_scan(&opts);
+
+    eprint!("Processing... ");
+    let reconstruction = generate_reconstruction(&opts, &input_image, &scan);
+    eprintln!("done!");
+
+    if let Some(image) = input_image {
+        calculate_error(&image, &reconstruction);
+    } else {
+        eprintln!("No --input-image supplied, not calculating transformation error vs. base image");
+    }
+
+    if let Some(name) = opts.output_scan {
+        scan_save(Path::new(&name), &scan);
+    }
+
+    if let Some(name) = opts.output_image {
+        image_save(Path::new(&name), reconstruction);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -465,7 +590,7 @@ mod tests {
             height: 1,
             data: DVector::from_element(1, 0),
         };
-        let scanned = scan(&image, 4, 7);
+        let scanned = scan(&image, 4, 7).data;
         assert_eq!(scanned.len(), 4 * 7);
         assert!(scanned.iter().all(|x| *x == 0.0))
     }
@@ -511,7 +636,7 @@ mod tests {
             2_f64.sqrt() / 3.0,
             0.0,
         ];
-        let actual = scan(&image, 4, 7);
+        let actual = scan(&image, 4, 7).data;
         assert_eq!(expected.len(), actual.len());
         for (e, a) in expected.iter().zip(actual.iter()) {
             assert!((e - a).abs() < 1e-14);
@@ -525,14 +650,14 @@ mod tests {
             height: 1,
             data: DVector::from_element(1, 1),
         };
-        let scan1 = scan(&image1, 4, 7);
+        let scan1 = scan(&image1, 4, 7).data;
 
         let image2 = TomoImage {
             width: 8,
             height: 8,
             data: DVector::from_element(8 * 8, 1),
         };
-        let scan2 = scan(&image2, 4, 7);
+        let scan2 = scan(&image2, 4, 7).data;
 
         assert_eq!(scan1.len(), scan2.len());
         for (s1, s2) in scan1.iter().zip(scan2.iter()) {
@@ -551,7 +676,7 @@ mod tests {
         let matrix = generate_forwards_matrix(src_img.width, src_img.height, angles, rays);
 
         let matrixed = (matrix * src_data).iter().copied().collect::<Vec<_>>();
-        let scanned = scan(&src_img, angles, rays);
+        let scanned = scan(&src_img, angles, rays).data;
 
         assert_eq!(scanned.len(), matrixed.len());
         for (s1, s2) in scanned.iter().zip(matrixed.iter()) {
@@ -571,7 +696,7 @@ mod tests {
 
         let src_img = image_load(Path::new("images/test.png"));
         let scan = scan(&src_img, angles, rays);
-        let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
+        let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
         let total_error: f64 = src_img.data
             .iter()
@@ -599,7 +724,7 @@ mod tests {
 
         let src_img = TomoImage { width, height, data };
         let scan = scan(&src_img, angles, rays);
-        let dst_img = reconstruct(&scan, src_img.width, src_img.height, angles, rays);
+        let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
         let total_error: f64 = src_img.data
             .iter()

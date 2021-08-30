@@ -121,8 +121,14 @@ Hurrah. Interestingly, the size of the error seems to vary quite a lot
 with the number of path samples, so this looks like it'll be worth
 some investigation.
 
+You can run a basic scan and reconstruction with something like:
+
+```
+cargo +nightly run --release -- --input-image=images/test.png --rays=35 --angles=40 --output-scan=results/test_scan.png --output-image=results/test.png
+```
+
+
 TODO: Test and explore further.
 
-TODO: Also, it'd be nice if it had a decent command line interface and
-error handling. It's kind of optional for this toy-level tool, but
-it's good practice, right?
+TODO: Also, it'd be nice if it had decent error handling. It's kind of
+optional for this toy-level tool, but it's good practice, right?
