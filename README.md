@@ -121,12 +121,12 @@ Hurrah. Interestingly, the size of the error seems to vary quite a lot
 with the number of path samples, so this looks like it'll be worth
 some investigation.
 
-You can run a basic scan and reconstruction with something like:
+`make demo` should exercise the image-to-transform-and-back cycle.
 
-```
-cargo +nightly run --release -- --input-image=images/test.png --rays=35 --angles=40 --output-scan=results/test_scan.png --output-image=results/test.png
-```
-
+It's pretty darn slow, since it performs a matrix inverse on a matrix
+whose dimensions are the width-height product of the image, and
+rays-angles product of the scan, respectively. Images much bigger than
+30x30 get pretty slow on my laptop.
 
 TODO: Test and explore further.
 
