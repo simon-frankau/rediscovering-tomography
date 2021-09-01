@@ -1,7 +1,3 @@
-extern crate clap;
-extern crate image;
-extern crate nalgebra;
-
 use clap::{AppSettings, Clap};
 use image::{GrayImage, Pixel};
 use nalgebra::base::{DMatrix, DVector};
@@ -192,7 +188,7 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> TomoScan {
         let axis_start = (angle.cos(), angle.sin());
         let axis_end = (-axis_start.0, -axis_start.1);
         for ray in (0..rays).map(|x| x as f64 * ray_step - ray_offset) {
-            // Rays are paralell, so move end points at a normal.
+            // Rays are parallel, so move end points at a normal.
             let parallel_offset = (ray * -axis_start.1, ray * axis_start.0);
             let ray_start = (
                 axis_start.0 + parallel_offset.0,
@@ -359,7 +355,7 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
             eprintln!("--angles not specified, using {}.", resolution);
             resolution
         });
-        let rays = opts.angles.unwrap_or_else(|| {
+        let rays = opts.rays.unwrap_or_else(|| {
             eprintln!("--rays not specified, using {}.", resolution);
             resolution
         });

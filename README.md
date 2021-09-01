@@ -128,7 +128,40 @@ whose dimensions are the width-height product of the image, and
 rays-angles product of the scan, respectively. Images much bigger than
 30x30 get pretty slow on my laptop.
 
-TODO: Test and explore further.
+## Convergence
 
-TODO: Also, it'd be nice if it had decent error handling. It's kind of
-optional for this toy-level tool, but it's good practice, right?
+I tried modifying the number of rays and angles to see how quickly the
+reconstruction converges on the original. I know this a bit of a
+rabbit-hole for me, based on previous numerical code projects, so I've
+done a bit of investigation and drawn a line under it! I should only
+invest so much time in empirical studies of convergence.
+
+I ran a bunch of conversions, and put the results in [this
+sheet](https://docs.google.com/spreadsheets/d/1mdHI4n2HNloAuYGf7aMaZISQnpawe0drygIFAd0lKsA/edit?usp=sharing).
+Interesting things to note are:
+
+ * For my test image, of size 32x32 (1024 pixels), convergence
+   (stabilising at roughly an error of 0.6 per pixel on an 8-bit image
+   - approximately 0.25%) seems to happen when rays * angles ~= 1300.
+   Slight oversampling seems needed, I've no idea what the theoretical
+   basis might be!
+ * In the region where angles ~= rays, error seems to decrease in a
+   straight line with angles * rays.
+ * It looks like when rays << angles, or angles << rays, the smaller
+   number constrains convergence above the minimal error, but I can't
+   tell if this is a genuine asymptote or just much slower
+   convergence.
+ * As this is a small image, you can see discretisation effects,
+   particularly with odd/even ray count.
+
+It's all very intriguing, but probably best not to get too distracted
+by it.
+
+# TODOs
+
+ * Investigate other algorithms for reconstruction?
+ * Also, it'd be nice if the tools had decent error handling. It's
+   kind of optional for this toy-level tool, but it's good practice,
+   right?
+ * Read up the official approach! :p
+ * Restructure the README once I'm done to make sense?
