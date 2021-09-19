@@ -157,6 +157,19 @@ Interesting things to note are:
 It's all very intriguing, but probably best not to get too distracted
 by it.
 
+# Next steps
+
+It'd be nice to work out a more mathematically-structured and
+efficient way of performing the transformation. I think a useful
+approach is to start looking at the transform in polar coordinates. In
+that case, the inverse transform can be characterised by the linear
+transform required for one radial slice, and then it can be applied to
+all the different radial slices. Moreover... this kind of "perform the
+dot product, but for all rotations" sounds suspiciously like a
+convolution. A Fourier transform can make the implementation more
+efficient, but also hints at how we might approach this transform
+algebraically...
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?
