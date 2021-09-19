@@ -1,4 +1,4 @@
-use clap::{AppSettings, Clap};
+use clap::{AppSettings, ArgEnum, Clap};
 use image::{GrayImage, Pixel};
 use nalgebra::base::{DMatrix, DVector};
 use std::path::Path;
@@ -239,7 +239,7 @@ fn scan_load(path: &Path) -> TomoScan {
 }
 
 ////////////////////////////////////////////////////////////////////////
-// Image reconstruction
+// Image reconstruction via matrix inversion
 //
 
 fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usize) -> DMatrix<f64> {
@@ -291,7 +291,7 @@ fn generate_inverse_matrix(width: usize, height: usize, angles:usize, rays: usiz
     forwards.pseudo_inverse(1e-6).unwrap()
 }
 
-fn reconstruct(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
+fn reconstruct_matrix_invert(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
     let matrix = generate_inverse_matrix(width, height, scan.angles, scan.rays);
     let input: DVector<f64> = DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
     let reconstruction = matrix * input;
@@ -306,8 +306,104 @@ fn reconstruct(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
 // accuracy.
 
 ////////////////////////////////////////////////////////////////////////
+// Reconstruction via deconvolution
+//
+
+// Integrate across all the rays that pass through a given point.
+// Given point is in (-1..1, -1..1) coordinates.
+fn circular_integral(scan: &TomoScan, x: f64, y: f64) -> f64 {
+    let mut total = 0.0;
+
+    // Consistent with generate_forwards_matrix, from which much of
+    // the code was copied (*sigh* - so much for DRY).
+    let angle_step = std::f64::consts::PI / scan.angles as f64;
+    // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
+    let ray_offset = 2_f64.sqrt();
+    let ray_step_inv = (scan.rays - 1) as f64 / (2.0 * ray_offset);
+    for angle_num in 0..scan.angles {
+        let angle = angle_num as f64 * angle_step;
+
+        // 1. For each angle, find the ray numbers closest to our point:
+
+        // a) Generate a unit vector normal to the direction of the rays.
+        let normal = (-angle.sin(), angle.cos());
+
+        // b) Dot product it with the vector to the point to get the
+        // (signed) size of the component normal to the ray direction,
+        // which represents the distace of closest approach.
+        let dist = normal.0 * x + normal.1 * y;
+
+        // c) Convert this distance to a ray number - a floating point
+        // verison of the index into the range of rays.
+        let ray_num = (dist + ray_offset) * ray_step_inv;
+
+        // 2. Then we interpolate between those rays to approximate
+        // the contribution of the ray at that angle passing through
+        // the point.
+        let r0 = ray_num.floor() as isize;
+        let r1 = r0 + 1;
+        let fract = ray_num - (r0 as f64);
+        // fract is in [0.0, 1.0).
+        // We linearly interpolate by adding (1.0 - fract) * w(r0) + fract * w(r1).
+        for (wt, ray_num) in [((1.0 - fract), r0), (fract, r1)].iter() {
+            if 0 <= *ray_num && (*ray_num as usize) < scan.rays {
+                let idx = angle_num * scan.rays + *ray_num as usize;
+                total += wt * scan.data[idx];
+            }
+        }
+    }
+
+    total / scan.angles as f64
+}
+
+// Generate the circular integrals of all points in a grid from a
+// TomoScan. The result is a convolved image.
+fn generate_convolved_tomo(scan: &TomoScan, w: usize, h: usize) -> Vec<f64> {
+    let mut res = Vec::new();
+
+    let y_scale = 2.0 / h as f64;
+    let y_offset = -1.0;
+    // Sample at the centre of the pixels - add 0.5
+    for y in (0..h).map(|idx| (idx as f64 + 0.5) * y_scale + y_offset) {
+        let x_scale = 2.0 / w as f64;
+        let x_offset = -1.0;
+        for x in (0..w).map(|idx| (idx as f64 + 0.5) * x_scale + x_offset) {
+            res.push(circular_integral(scan, x, y));
+        }
+    }
+
+    res
+}
+
+// Not a real attempt at reconstruction, we just do the
+// convolution-generation step and return it without attempting to
+// deconvolve. It does give a nice blurry version of the original!
+
+fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
+    let recon = generate_convolved_tomo(&scan, width, height);
+
+    let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, recon
+        .iter()
+        .map(|x| x.max(0.0).min(255.0) as u8));
+
+    TomoImage { width, height, data: recon_as_u8 }
+}
+
+// TODO: Implement some tests
+// * Generate the convolution filter.
+// * Do the convolution the long way around, from the original image, and check that they match.
+// * Implement convolution via FFT, check it works the same.
+// * Generate the deconvolution filter, test end-to-end.
+
+////////////////////////////////////////////////////////////////////////
 // Main entry point
 //
+
+#[derive(ArgEnum)]
+pub enum Algorithm {
+    MatrixInversion,
+    Convolution,
+}
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -340,6 +436,8 @@ struct Opts {
     /// Height of reconstructed image
     #[clap(long)]
     height: Option<usize>,
+    #[clap(arg_enum, long, default_value = "matrix-inversion")]
+    algorithm: Algorithm,
 }
 
 // Generate a scan, and return the image it was generated from, if available.
@@ -385,7 +483,10 @@ fn generate_reconstruction(opts: &Opts, original: &Option<TomoImage>, scan: &Tom
         resolution
     });
 
-    reconstruct(&scan, width, height)
+    match opts.algorithm {
+        Algorithm::MatrixInversion => reconstruct_matrix_invert(&scan, width, height),
+        Algorithm::Convolution => reconstruct_convolution(&scan, width, height),
+    }
 }
 
 fn calculate_error(base_image: &TomoImage, new_image: &TomoImage) {
@@ -692,7 +793,7 @@ mod tests {
 
         let src_img = image_load(Path::new("images/test.png"));
         let scan = scan(&src_img, angles, rays);
-        let dst_img = reconstruct(&scan, src_img.width, src_img.height);
+        let dst_img = reconstruct_matrix_invert(&scan, src_img.width, src_img.height);
 
         let total_error: f64 = src_img.data
             .iter()
@@ -720,7 +821,7 @@ mod tests {
 
         let src_img = TomoImage { width, height, data };
         let scan = scan(&src_img, angles, rays);
-        let dst_img = reconstruct(&scan, src_img.width, src_img.height);
+        let dst_img = reconstruct_matrix_invert(&scan, src_img.width, src_img.height);
 
         let total_error: f64 = src_img.data
             .iter()

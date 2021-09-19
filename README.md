@@ -170,6 +170,20 @@ convolution. A Fourier transform can make the implementation more
 efficient, but also hints at how we might approach this transform
 algebraically...
 
+# Next steps again
+
+Having thought a little further, we can, for each point, generate an
+integral of all the rays that pass through that point, integrating
+over the different angles. This will give us an integral over the
+space that is radially symmetric, and we can get this for each point
+in the grid. The result is a convolution of the image with a weighting
+function, and we can deconvolve it. At least, that's the plan. Let's
+try...
+
+Right now we have `--algorithm=matrix-inversion` as the default
+existing algorithm, and `--algorithm=convolution` as generating the
+(not deconvolved) integral version.
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?
