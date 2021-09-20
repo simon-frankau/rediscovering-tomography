@@ -902,6 +902,7 @@ mod tests {
         let x_offset = (width as f64 - 1.0) / 2.0;
         let y_offset = (height as f64 - 1.0) / 2.0;
 
+        let mut integral_120 = 0.0;
         let mut integral_100 = 0.0;
         let mut integral_070 = 0.0;
         let mut integral_050 = 0.0;
@@ -913,12 +914,14 @@ mod tests {
 
                 let r = (x * x + y * y).sqrt();
                 let weight = filter[y_idx * width + x_idx];
+                if r <= 1.2 { integral_120 += weight; }
                 if r <= 1.0 { integral_100 += weight; }
                 if r <= 0.7 { integral_070 += weight; }
                 if r <= 0.5 { integral_050 += weight; }
             }
         }
 
+        assert!((integral_120 - 1.2).abs() < 0.005);
         assert!((integral_100 - 1.0).abs() < 0.005);
         assert!((integral_070 - 0.7).abs() < 0.005);
         assert!((integral_050 - 0.5).abs() < 0.005);
@@ -942,6 +945,7 @@ mod tests {
         let x_offset = (width as f64 - 1.0) / 2.0;
         let y_offset = (height as f64 - 1.0) / 2.0;
 
+        let mut integral_120 = 0.0;
         let mut integral_100 = 0.0;
         let mut integral_070 = 0.0;
         let mut integral_050 = 0.0;
@@ -953,12 +957,14 @@ mod tests {
 
                 let r = (x * x + y * y).sqrt();
                 let weight = filter[y_idx * width + x_idx];
+                if r <= 1.2 { integral_120 += weight; }
                 if r <= 1.0 { integral_100 += weight; }
                 if r <= 0.7 { integral_070 += weight; }
                 if r <= 0.5 { integral_050 += weight; }
             }
         }
 
+        assert!((integral_120 - 1.2).abs() < 0.005);
         assert!((integral_100 - 1.0).abs() < 0.005);
         assert!((integral_070 - 0.7).abs() < 0.005);
         assert!((integral_050 - 0.5).abs() < 0.005);
