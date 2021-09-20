@@ -429,7 +429,6 @@ fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> (usiz
 // Not a real attempt at reconstruction, we just do the
 // convolution-generation step and return it without attempting to
 // deconvolve. It does give a nice blurry version of the original!
-
 fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
     let recon = generate_convolved_tomo(&scan, width, height);
 
@@ -441,7 +440,6 @@ fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> Tomo
 }
 
 // TODO: Implement some tests
-// * Do the convolution the long way around, from the original image, and check that they match.
 // * Implement convolution via FFT, check it works the same.
 // * Generate the deconvolution filter, test end-to-end.
 
@@ -1025,46 +1023,97 @@ mod tests {
         }
     }
 
-    // TODO: Test overscan.
+    // Scales down the image by the given factor, which must divide
+    // width and height.
+    //
+    // TODO: Currently only used for testing, but may come in handy...
+    fn downscale(image: &[f64], width: usize, height: usize, factor: usize) -> Vec<f64> {
+        assert_eq!(image.len(), width * height);
+        assert!(width % factor == 0);
+        assert!(height % factor == 0);
 
-    // TODO: Supersampling?
+        let new_w = width / factor;
+        let new_h = height / factor;
 
-    // TODO: Test the filter produces a similar result to doing a scan
-    // and generating a convolution from an impulse-like source.
-
-/*
-// TODO: Incomplete debug stuff:
-    #[test]
-    fn test_filter() {
-        let (w, h) = (128, 128);
-        let overscan = 0.0;
-        let filter = build_convolution_filter(w, h, overscan);
-
-        let recon_as_u8: DVector<u8> = DVector::from_iterator(w * h, filter
-            .iter()
-            .map(|x| (x * 255.0 * 128.0).max(0.0).min(255.0) as u8));
-
-        let image = TomoImage { width: w, height: h, data: recon_as_u8 };
-
-        image_save(Path::new("blah.png"), image);
+        let mut res = Vec::new();
+        for y in (0..new_h).map(|y| y * factor) {
+            for x in (0..new_w).map(|x| x * factor) {
+                let mut pixel: f64 = 0.0;
+                for sub_y in 0..factor {
+                    for sub_x in 0..factor {
+                        pixel += image[(y + sub_y) * width + (x + sub_x)];
+                    }
+                }
+                res.push(pixel / (factor as f64 * factor as f64));
+            }
+        }
+        res
     }
 
+    // Test that the convolution filter we generate is more-or-less
+    // the same as what we get by scanning a point and convoluting it.
     #[test]
-    fn test_filter2() {
-        let rays = 256;
-        let angles = 256;
+    fn test_convolution_comparison() {
+        let (width, height) = (65, 65);
+        let oversample_factor = 5;
 
-        let width = 128;
-        let height = 128;
-        let data = DVector::from_fn(width * height, |p, _| {
-            if (64 <= p % 128 && p % 128 <= 65) && (64 <= p / 128 && p / 128 <= 65) { 255 } else { 0 }
+        // Generate a convolution filter, no overscan. Integral up to
+        // radius 1.0 is 1.0
+        let (_, _, generated) = build_convolution_filter(width, height, 0.0);
+
+        // Generate an image with a circle at the centre. We will later
+        // scale it down to a circle one pixel in diameter, to be close
+        // to what the convolution filter is generating.
+        let (o_width, o_height) = (width * oversample_factor, height * oversample_factor);
+
+        let mut circle_area = 0.0;
+
+        let image = DVector::from_fn(o_width * o_height, |idx, _| {
+            let (x_idx, y_idx) = (idx % o_width, idx / o_width);
+            // Adjust to centre of pixels.
+            let x = x_idx as f64 + 0.5 - o_width as f64 / 2.0;
+            let y = y_idx as f64 + 0.5 - o_height as f64 / 2.0;
+
+            // Set radius = oversample_factor / 2 pixels,
+            // diameter = oversample_factor.
+            let r2 = x * x + y * y;
+            if r2 <= oversample_factor as f64 * oversample_factor as f64 / 4.0 {
+                circle_area += 1.0;
+                1
+            } else {
+                0
+            }
         });
 
-        let src_img = TomoImage { width, height, data };
-        let scan = scan(&src_img, angles, rays);
-        let dst_img = reconstruct_convolution(&scan, src_img.width, src_img.height);
+        // Make sure we don't lose precision in the scan.
+        let rays = o_width * 2;
+        let angles = o_height * 2;
 
-        image_save(Path::new("other_blah.png"), dst_img);
+        let src_img = TomoImage { width: o_width, height: o_height, data: image };
+        let scan = scan(&src_img, angles, rays);
+        let reconstructed = generate_convolved_tomo(&scan, o_width, o_height);
+
+        // The resulting image's integral up to radius 1.0 is circle_area.
+
+        // Downscaling the image reduces the integral by oversample_factor^2.
+        let downscaled = downscale(&reconstructed, o_width, o_height, oversample_factor);
+
+        // Then normalise to the same scale as the generated filter by
+        // dividing through by circle_area / oversample_factor^2
+        let scale_factor = (oversample_factor as f64 * oversample_factor as f64) / circle_area;
+        let normalised = downscaled.iter().map(|p| p * scale_factor).collect::<Vec<_>>();
+
+        // Calculate the total error, integrated over the full image.
+        assert_eq!(generated.len(), normalised.len());
+        let error: f64 = generated.iter().zip(normalised.iter()).map(|(a, b)| (a - b).abs()).sum();
+
+        // Given the integral within unit radius is 1, and the
+        // integral over the whole square is a bit more, this is not
+        // far off a 1% error. If oversample_factor is 9, the error
+        // reduces to around 0.01. Given the amount of half-assed
+        // numerical methods that I'm doing here, having an error
+        // around 1% seems good enough to me! I think the algorithms
+        // do pretty much match.
+        assert!(error < 0.016);
     }
-*/
 }
