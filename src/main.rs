@@ -386,7 +386,7 @@ fn generate_convolved_tomo(scan: &TomoScan, w: usize, h: usize) -> Vec<f64> {
 //
 // Weights are set such that integrating over a unit disc should
 // produce 1.0.
-fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> Vec<f64> {
+fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> (usize, usize, Vec<f64>) {
     let w_overscan = (width as f64 * overscan).ceil() as usize;
     let h_overscan = (height as f64 * overscan).ceil() as usize;
 
@@ -397,8 +397,8 @@ fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> Vec<f
     let y_step = 2.0 / height as f64;
 
     // Sample the centre of pixels - offset by 0.5.
-    let x_offset = (width as f64 - 1.0) / 2.0;
-    let y_offset = (height as f64 - 1.0) / 2.0;
+    let x_offset = (w_full as f64 - 1.0) / 2.0;
+    let y_offset = (h_full as f64 - 1.0) / 2.0;
 
     let mut res = Vec::new();
 
@@ -422,7 +422,8 @@ fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> Vec<f
     // is precisely 1.0, but we're within 0.5% with a decent-sized grid,
     // which is good enough for what we're doing here.
 
-    res
+    // TODO: Maybe make a proper struct?
+    (w_full, h_full, res)
 }
 
 // Not a real attempt at reconstruction, we just do the
@@ -887,13 +888,15 @@ mod tests {
     // (integral = r).
     #[test]
     fn test_convolution_integral_even() {
-        let (width, height) = (128, 128);
-        let overscan = 0.0;
-        let filter = build_convolution_filter(width, height, overscan);
+        let (base_width, base_height) = (128, 128);
+        let overscan = 0.3;
+        let (width, height, filter) = build_convolution_filter(base_width, base_height, overscan);
+        assert!(width % 2 == 0);
+        assert!(height % 2 == 0);
 
         // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / width as f64;
-        let y_step = 2.0 / height as f64;
+        let x_step = 2.0 / base_width as f64;
+        let y_step = 2.0 / base_height as f64;
 
         // Sample the centre of pixels - offset by 0.5.
         let x_offset = (width as f64 - 1.0) / 2.0;
@@ -925,13 +928,15 @@ mod tests {
     // which means we sample on the singularity at r = 0.
     #[test]
     fn test_convolution_integral_odd() {
-        let (width, height) = (129, 129);
-        let overscan = 0.0;
-        let filter = build_convolution_filter(width, height, overscan);
+        let (base_width, base_height) = (129, 129);
+        let overscan = 0.3;
+        let (width, height, filter) = build_convolution_filter(base_width, base_height, overscan);
+        assert!(width % 2 == 1);
+        assert!(height % 2 == 1);
 
         // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / width as f64;
-        let y_step = 2.0 / height as f64;
+        let x_step = 2.0 / base_width as f64;
+        let y_step = 2.0 / base_height as f64;
 
         // Sample the centre of pixels - offset by 0.5.
         let x_offset = (width as f64 - 1.0) / 2.0;
@@ -962,9 +967,11 @@ mod tests {
     // Check that the convolution filter is symmetric.
     #[test]
     fn test_convolution_symmetric() {
-        let (width, height) = (128, 129);
-        let overscan = 0.0;
-        let filter = build_convolution_filter(width, height, overscan);
+        let (base_width, base_height) = (128, 129);
+        let overscan = 0.3;
+        let (width, height, filter) = build_convolution_filter(base_width, base_height, overscan);
+        assert!(width % 2 == 0);
+        assert!(height % 2 == 1);
 
         for y1 in 0..height {
             let y2 = height - 1 - y1;
@@ -984,6 +991,34 @@ mod tests {
         }
     }
 
+    // Check that the core region of the overscan is the same as the
+    // non-overscanned version.
+
+    #[test]
+    fn test_convolution_overscan() {
+        let (base_width, base_height) = (128, 129);
+        let overscan = 0.3;
+        let (width, height, filter) = build_convolution_filter(base_width, base_height, overscan);
+        let (width_no_over, height_no_over, filter_no_over) = build_convolution_filter(base_width, base_height, 0.0);
+        assert_eq!(width_no_over, base_width);
+        assert_eq!(height_no_over, base_height);
+
+        let w_adj = (width - base_width) / 2;
+        let h_adj = (height - base_height) / 2;
+
+        for y in 0..base_height {
+            let y2 = y + h_adj;
+            for x in 0..width_no_over {
+                let x2 = x + w_adj;
+
+                let p1 = filter_no_over[y * base_width + x];
+                let p2 = filter[y2 * width + x2];
+
+                assert_eq!(p1, p2);
+            }
+        }
+    }
+
     // TODO: Test overscan.
 
     // TODO: Supersampling?
@@ -991,7 +1026,8 @@ mod tests {
     // TODO: Test the filter produces a similar result to doing a scan
     // and generating a convolution from an impulse-like source.
 
-/* TODO: Incomplete debug stuff:
+/*
+// TODO: Incomplete debug stuff:
     #[test]
     fn test_filter() {
         let (w, h) = (128, 128);
@@ -1000,7 +1036,7 @@ mod tests {
 
         let recon_as_u8: DVector<u8> = DVector::from_iterator(w * h, filter
             .iter()
-            .map(|x| (x * 255.0).max(0.0).min(255.0) as u8));
+            .map(|x| (x * 255.0 * 128.0).max(0.0).min(255.0) as u8));
 
         let image = TomoImage { width: w, height: h, data: recon_as_u8 };
 
