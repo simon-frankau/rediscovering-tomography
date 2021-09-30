@@ -1,7 +1,7 @@
 use clap::{AppSettings, ArgEnum, Clap};
-use rustfft::{FftPlanner, FftDirection, num_complex::Complex64};
 use image::{GrayImage, Pixel};
 use nalgebra::base::{DMatrix, DVector};
+use rustfft::{num_complex::Complex64, FftDirection, FftPlanner};
 use std::path::Path;
 
 ////////////////////////////////////////////////////////////////////////
@@ -209,7 +209,11 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> TomoScan {
         }
     }
 
-    TomoScan { angles, rays, data: res }
+    TomoScan {
+        angles,
+        rays,
+        data: res,
+    }
 }
 
 // Converts a scan to an image and saves it, perhaps useful for
@@ -220,10 +224,11 @@ fn scan_save(path: &Path, scan: &TomoScan) {
         height: scan.angles,
         data: DVector::from_iterator(
             scan.rays * scan.angles,
-            scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8)),
+            scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8),
+        ),
     };
 
-   image_save(path, image);
+    image_save(path, image);
 }
 
 // If we're supporting saving, let's support loading.
@@ -232,7 +237,8 @@ fn scan_load(path: &Path) -> TomoScan {
     TomoScan {
         rays: image.width,
         angles: image.height,
-        data: image.data
+        data: image
+            .data
             .iter()
             .map(|x| *x as f64 * 2_f64.sqrt())
             .collect(),
@@ -243,7 +249,12 @@ fn scan_load(path: &Path) -> TomoScan {
 // Image reconstruction via matrix inversion
 //
 
-fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usize) -> DMatrix<f64> {
+fn generate_forwards_matrix(
+    width: usize,
+    height: usize,
+    angles: usize,
+    rays: usize,
+) -> DMatrix<f64> {
     let src_dim = width * height;
     let dst_dim = angles * rays;
 
@@ -287,20 +298,31 @@ fn generate_forwards_matrix(width: usize, height: usize, angles:usize, rays: usi
     res
 }
 
-fn generate_inverse_matrix(width: usize, height: usize, angles:usize, rays: usize) -> DMatrix<f64> {
+fn generate_inverse_matrix(
+    width: usize,
+    height: usize,
+    angles: usize,
+    rays: usize,
+) -> DMatrix<f64> {
     let forwards = generate_forwards_matrix(width, height, angles, rays);
     forwards.pseudo_inverse(1e-6).unwrap()
 }
 
 fn reconstruct_matrix_invert(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
     let matrix = generate_inverse_matrix(width, height, scan.angles, scan.rays);
-    let input: DVector<f64> = DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
+    let input: DVector<f64> =
+        DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
     let reconstruction = matrix * input;
-    let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, reconstruction
-        .iter()
-        .map(|x| x.max(0.0).min(255.0) as u8));
+    let recon_as_u8: DVector<u8> = DVector::from_iterator(
+        width * height,
+        reconstruction.iter().map(|x| x.max(0.0).min(255.0) as u8),
+    );
 
-    TomoImage { width, height, data: recon_as_u8 }
+    TomoImage {
+        width,
+        height,
+        data: recon_as_u8,
+    }
 }
 
 // TODO: See what effect adding noise and changing rays/angles has on
@@ -387,7 +409,11 @@ fn generate_convolved_tomo(scan: &TomoScan, w: usize, h: usize) -> Vec<f64> {
 //
 // Weights are set such that integrating over a unit disc should
 // produce 1.0.
-fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> (usize, usize, Vec<f64>) {
+fn build_convolution_filter(
+    width: usize,
+    height: usize,
+    overscan: f64,
+) -> (usize, usize, Vec<f64>) {
     let w_overscan = (width as f64 * overscan).ceil() as usize;
     let h_overscan = (height as f64 * overscan).ceil() as usize;
 
@@ -431,13 +457,18 @@ fn build_convolution_filter(width: usize, height: usize, overscan: f64) -> (usiz
 // convolution-generation step and return it without attempting to
 // deconvolve. It does give a nice blurry version of the original!
 fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
-    let recon = generate_convolved_tomo(&scan, width, height);
+    let recon = generate_convolved_tomo(scan, width, height);
 
-    let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, recon
-        .iter()
-        .map(|x| x.max(0.0).min(255.0) as u8));
+    let recon_as_u8: DVector<u8> = DVector::from_iterator(
+        width * height,
+        recon.iter().map(|x| x.max(0.0).min(255.0) as u8),
+    );
 
-    TomoImage { width, height, data: recon_as_u8 }
+    TomoImage {
+        width,
+        height,
+        data: recon_as_u8,
+    }
 }
 
 // We're not going to do any fancy real-valued optimisations for the
@@ -451,7 +482,13 @@ fn to_complex(v: &[f64]) -> Vec<Complex64> {
 // non-trivial, but we're keeping things simple.
 fn from_complex(v: &[Complex64]) -> Vec<f64> {
     const EPSILON: f64 = 1e-7;
-    assert!(v.iter().map(|z| z.im.abs()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap() < EPSILON);
+    assert!(
+        v.iter()
+            .map(|z| z.im.abs())
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
+            < EPSILON
+    );
     v.iter().map(|x| x.re).collect()
 }
 
@@ -469,7 +506,12 @@ fn transpose<T: Copy>(width: usize, height: usize, data: &[T]) -> Vec<T> {
 }
 
 // Perform a 2D FFT
-fn fourier_transform(width: usize, height: usize, data: &[Complex64], dir: FftDirection) -> Vec<Complex64> {
+fn fourier_transform(
+    width: usize,
+    height: usize,
+    data: &[Complex64],
+    dir: FftDirection,
+) -> Vec<Complex64> {
     assert_eq!(width * height, data.len());
 
     let zero = Complex64::new(0.0, 0.0);
@@ -501,7 +543,13 @@ fn fourier_transform(width: usize, height: usize, data: &[Complex64], dir: FftDi
 // an amount equivalent to the coordinates of the centre of the filter.
 // "shift" can undo this.
 
-fn shift<T: Copy>(width: usize, height: usize, data: &[T], x_shift: usize, y_shift: usize) -> Vec<T> {
+fn shift<T: Copy>(
+    width: usize,
+    height: usize,
+    data: &[T],
+    x_shift: usize,
+    y_shift: usize,
+) -> Vec<T> {
     let mut res = Vec::with_capacity(width * height);
     for y in 0..height {
         for x in 0..width {
@@ -567,7 +615,10 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
     // TODO: More graceful error handling than assert!/panic!.
 
     if let Some(name) = &opts.input_image {
-        assert!(opts.input_scan.is_none(), "Please specify only one of --input-image and --input-scan");
+        assert!(
+            opts.input_scan.is_none(),
+            "Please specify only one of --input-image and --input-scan"
+        );
 
         let image = image_load(Path::new(&name));
         let resolution = image.width.max(image.height);
@@ -582,8 +633,14 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
         let scanned = scan(&image, angles, rays);
         (Some(image), scanned)
     } else if let Some(name) = &opts.input_scan {
-        assert!(opts.angles.is_none(), "--angles cannot be used with --input-scan");
-        assert!(opts.rays.is_none(), "--rays cannot be used with --input-scan");
+        assert!(
+            opts.angles.is_none(),
+            "--angles cannot be used with --input-scan"
+        );
+        assert!(
+            opts.rays.is_none(),
+            "--rays cannot be used with --input-scan"
+        );
 
         (None, scan_load(Path::new(&name)))
     } else {
@@ -591,23 +648,36 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
     }
 }
 
-fn generate_reconstruction(opts: &Opts, original: &Option<TomoImage>, scan: &TomoScan) -> TomoImage {
+fn generate_reconstruction(
+    opts: &Opts,
+    original: &Option<TomoImage>,
+    scan: &TomoScan,
+) -> TomoImage {
     // When choosing image size, prefer the command-line flag,
     // otherwise infer from original size, otherwise guess based on
     // scan size.
     let resolution = scan.angles.max(scan.rays);
-    let width = opts.width.or(original.as_ref().map(|x| x.width)).unwrap_or_else(|| {
-        eprintln!("No --width or --input-image, using width of {}", resolution);
-        resolution
-    });
-    let height = opts.height.or(original.as_ref().map(|x| x.height)).unwrap_or_else(|| {
-        eprintln!("No --height or --input-image, using height of {}", resolution);
-        resolution
-    });
+    let width = opts
+        .width
+        .or_else(|| original.as_ref().map(|x| x.width))
+        .unwrap_or_else(|| {
+            eprintln!("No --width or --input-image, using width of {}", resolution);
+            resolution
+        });
+    let height = opts
+        .height
+        .or_else(|| original.as_ref().map(|x| x.height))
+        .unwrap_or_else(|| {
+            eprintln!(
+                "No --height or --input-image, using height of {}",
+                resolution
+            );
+            resolution
+        });
 
     match opts.algorithm {
-        Algorithm::MatrixInversion => reconstruct_matrix_invert(&scan, width, height),
-        Algorithm::Convolution => reconstruct_convolution(&scan, width, height),
+        Algorithm::MatrixInversion => reconstruct_matrix_invert(scan, width, height),
+        Algorithm::Convolution => reconstruct_convolution(scan, width, height),
     }
 }
 
@@ -624,7 +694,8 @@ fn calculate_error(base_image: &TomoImage, new_image: &TomoImage) {
         return;
     }
 
-    let total_error: f64 = base_image.data
+    let total_error: f64 = base_image
+        .data
         .iter()
         .zip(new_image.data.iter())
         .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
@@ -917,7 +988,8 @@ mod tests {
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct_matrix_invert(&scan, src_img.width, src_img.height);
 
-        let total_error: f64 = src_img.data
+        let total_error: f64 = src_img
+            .data
             .iter()
             .zip(dst_img.data.iter())
             .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
@@ -939,13 +1011,18 @@ mod tests {
         let data = DVector::from_fn(8 * 8, |p, _| {
             let (x, y) = (p % 8, p / 8);
             (x * 8 + if y >= 4 { 64 } else { 0 }) as u8
-            });
+        });
 
-        let src_img = TomoImage { width, height, data };
+        let src_img = TomoImage {
+            width,
+            height,
+            data,
+        };
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct_matrix_invert(&scan, src_img.width, src_img.height);
 
-        let total_error: f64 = src_img.data
+        let total_error: f64 = src_img
+            .data
             .iter()
             .zip(dst_img.data.iter())
             .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
@@ -981,15 +1058,23 @@ mod tests {
 
         for y_idx in 0..height {
             let y = (y_idx as f64 - y_offset) * y_step;
-            for x_idx  in 0..width {
+            for x_idx in 0..width {
                 let x = (x_idx as f64 - x_offset) * x_step;
 
                 let r = (x * x + y * y).sqrt();
                 let weight = filter[y_idx * width + x_idx];
-                if r <= 1.2 { integral_120 += weight; }
-                if r <= 1.0 { integral_100 += weight; }
-                if r <= 0.7 { integral_070 += weight; }
-                if r <= 0.5 { integral_050 += weight; }
+                if r <= 1.2 {
+                    integral_120 += weight;
+                }
+                if r <= 1.0 {
+                    integral_100 += weight;
+                }
+                if r <= 0.7 {
+                    integral_070 += weight;
+                }
+                if r <= 0.5 {
+                    integral_050 += weight;
+                }
             }
         }
 
@@ -1024,15 +1109,23 @@ mod tests {
 
         for y_idx in 0..height {
             let y = (y_idx as f64 - y_offset) * y_step;
-            for x_idx  in 0..width {
+            for x_idx in 0..width {
                 let x = (x_idx as f64 - x_offset) * x_step;
 
                 let r = (x * x + y * y).sqrt();
                 let weight = filter[y_idx * width + x_idx];
-                if r <= 1.2 { integral_120 += weight; }
-                if r <= 1.0 { integral_100 += weight; }
-                if r <= 0.7 { integral_070 += weight; }
-                if r <= 0.5 { integral_050 += weight; }
+                if r <= 1.2 {
+                    integral_120 += weight;
+                }
+                if r <= 1.0 {
+                    integral_100 += weight;
+                }
+                if r <= 0.7 {
+                    integral_070 += weight;
+                }
+                if r <= 0.5 {
+                    integral_050 += weight;
+                }
             }
         }
 
@@ -1077,7 +1170,8 @@ mod tests {
         let (base_width, base_height) = (128, 129);
         let overscan = 0.3;
         let (width, height, filter) = build_convolution_filter(base_width, base_height, overscan);
-        let (width_no_over, height_no_over, filter_no_over) = build_convolution_filter(base_width, base_height, 0.0);
+        let (width_no_over, height_no_over, filter_no_over) =
+            build_convolution_filter(base_width, base_height, 0.0);
         assert_eq!(width_no_over, base_width);
         assert_eq!(height_no_over, base_height);
 
@@ -1163,7 +1257,11 @@ mod tests {
         let rays = o_width * 2;
         let angles = o_height * 2;
 
-        let src_img = TomoImage { width: o_width, height: o_height, data: image };
+        let src_img = TomoImage {
+            width: o_width,
+            height: o_height,
+            data: image,
+        };
         let scan = scan(&src_img, angles, rays);
         let reconstructed = generate_convolved_tomo(&scan, o_width, o_height);
 
@@ -1175,11 +1273,18 @@ mod tests {
         // Then normalise to the same scale as the generated filter by
         // dividing through by circle_area / oversample_factor^2
         let scale_factor = (oversample_factor as f64 * oversample_factor as f64) / circle_area;
-        let normalised = downscaled.iter().map(|p| p * scale_factor).collect::<Vec<_>>();
+        let normalised = downscaled
+            .iter()
+            .map(|p| p * scale_factor)
+            .collect::<Vec<_>>();
 
         // Calculate the total error, integrated over the full image.
         assert_eq!(generated.len(), normalised.len());
-        let error: f64 = generated.iter().zip(normalised.iter()).map(|(a, b)| (a - b).abs()).sum();
+        let error: f64 = generated
+            .iter()
+            .zip(normalised.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
 
         // Given the integral within unit radius is 1, and the
         // integral over the whole square is a bit more, this is not
@@ -1234,15 +1339,35 @@ mod tests {
 
         let (_, _, generated) = build_convolution_filter(width, height, 0.0);
 
-        let deconvolution_fft = fourier_transform(width, height, &to_complex(&generated), FftDirection::Forward).iter().map(Complex64::inv).collect::<Vec<_>>();
+        let deconvolution_fft = fourier_transform(
+            width,
+            height,
+            &to_complex(&generated),
+            FftDirection::Forward,
+        )
+        .iter()
+        .map(Complex64::inv)
+        .collect::<Vec<_>>();
 
-        let fftd = fourier_transform(width, height, &to_complex(&generated), FftDirection::Forward);
+        let fftd = fourier_transform(
+            width,
+            height,
+            &to_complex(&generated),
+            FftDirection::Forward,
+        );
 
-        let decon = fftd.iter().zip(deconvolution_fft.iter()).map(|(z1, z2)| z1 * z2).collect::<Vec<_>>();
+        let decon = fftd
+            .iter()
+            .zip(deconvolution_fft.iter())
+            .map(|(z1, z2)| z1 * z2)
+            .collect::<Vec<_>>();
 
         let res = fourier_transform(width, height, &decon, FftDirection::Inverse);
 
-        let res2 = from_complex(&res).iter().map(|x| x / (width * height) as f64).collect::<Vec<_>>();
+        let res2 = from_complex(&res)
+            .iter()
+            .map(|x| x / (width * height) as f64)
+            .collect::<Vec<_>>();
 
         for (i, actual) in res2.iter().enumerate() {
             let expected = if i == 0 { 1.0 } else { 0.0 };
@@ -1266,47 +1391,70 @@ mod tests {
 
         let dst_img = reconstruct_convolution(&scan, width, height);
 
-
         let (_, _, generated) = build_convolution_filter(width, height, 0.0);
 
-        let deconvolution_fft = fourier_transform(width, height, &to_complex(&generated), FftDirection::Forward)
-            .iter()
-            .map(|z| if z.norm_sqr() < 1e-4 { Complex64::new(0.0, 0.0) } else { z.inv() })
-            .collect::<Vec<_>>();
+        let deconvolution_fft = fourier_transform(
+            width,
+            height,
+            &to_complex(&generated),
+            FftDirection::Forward,
+        )
+        .iter()
+        .map(|z| {
+            if z.norm_sqr() < 1e-4 {
+                Complex64::new(0.0, 0.0)
+            } else {
+                z.inv()
+            }
+        })
+        .collect::<Vec<_>>();
 
         // TODO: Maybe use something that doesn't convert to matrix...
         let img = dst_img.data.iter().map(|x| *x as f64).collect::<Vec<f64>>();
 
         let fftd = fourier_transform(width, height, &to_complex(&img), FftDirection::Forward);
 
-        let decon = fftd.iter().zip(deconvolution_fft.iter()).map(|(z1, z2)| z1 * z2).collect::<Vec<_>>();
+        let decon = fftd
+            .iter()
+            .zip(deconvolution_fft.iter())
+            .map(|(z1, z2)| z1 * z2)
+            .collect::<Vec<_>>();
 
         let res = fourier_transform(width, height, &decon, FftDirection::Inverse);
 
-        let res2 = from_complex(&res).iter().map(|x| x / (width * height) as f64).collect::<Vec<_>>();
+        let res2 = from_complex(&res)
+            .iter()
+            .map(|x| x / (width * height) as f64)
+            .collect::<Vec<_>>();
 
         let res3 = shift(width, height, &res2, width / 2, height / 2);
 
-        let recon_as_u8: DVector<u8> = DVector::from_iterator(width * height, res3
-            .iter()
-            .map(|x| x.max(0.0).min(255.0) as u8));
+        let recon_as_u8: DVector<u8> = DVector::from_iterator(
+            width * height,
+            res3.iter().map(|x| x.max(0.0).min(255.0) as u8),
+        );
 
-        let img = TomoImage { width, height, data: recon_as_u8 };
+        let img = TomoImage {
+            width,
+            height,
+            data: recon_as_u8,
+        };
 
-/* TODO: For debugging...
-        image_save(Path::new("full_cycle.png"), img);
+        /* TODO: For debugging...
+                image_save(Path::new("full_cycle.png"), img);
 
-        let diff_as_u8: DVector<u8> = DVector::from_iterator(width * height, res3
-            .iter().zip(src_img.data.iter())
-            .map(|(x, y)| {
-                 let diff = *x as i32 - *y as i32;
-                 (diff + 128).max(0).min(255) as u8 }));
+                let diff_as_u8: DVector<u8> = DVector::from_iterator(width * height, res3
+                    .iter().zip(src_img.data.iter())
+                    .map(|(x, y)| {
+                         let diff = *x as i32 - *y as i32;
+                         (diff + 128).max(0).min(255) as u8 }));
 
-        let diff_img = TomoImage { width, height, data: diff_as_u8 };
-        image_save(Path::new("full_cycle_diff.png"), diff_img);
-*/
+                let diff_img = TomoImage { width, height, data: diff_as_u8 };
+                image_save(Path::new("full_cycle_diff.png"), diff_img);
+        */
 
-        let total_error: f64 = src_img.data
+        let total_error: f64 = src_img
+            .data
             .iter()
             .zip(img.data.iter())
             .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
