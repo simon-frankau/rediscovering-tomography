@@ -305,33 +305,6 @@ mod tests {
         }
     }
 
-    // Scales down the image by the given factor, which must divide
-    // width and height.
-    //
-    // TODO: Currently only used for testing, but may come in handy...
-    // maybe move to Image?
-    fn downscale(image: &Image, factor: usize) -> Vec<f64> {
-        assert!(image.width % factor == 0);
-        assert!(image.height % factor == 0);
-
-        let new_w = image.width / factor;
-        let new_h = image.height / factor;
-
-        let mut res = Vec::new();
-        for y in (0..new_h).map(|y| y * factor) {
-            for x in (0..new_w).map(|x| x * factor) {
-                let mut pixel: f64 = 0.0;
-                for sub_y in 0..factor {
-                    for sub_x in 0..factor {
-                        pixel += image.data[(y + sub_y) * image.width + (x + sub_x)];
-                    }
-                }
-                res.push(pixel / (factor as f64 * factor as f64));
-            }
-        }
-        res
-    }
-
     // Test that the convolution filter we generate is more-or-less
     // the same as what we get by scanning a point and convoluting it.
     #[test]
@@ -382,12 +355,12 @@ mod tests {
         // The resulting image's integral up to radius 1.0 is circle_area.
 
         // Downscaling the image reduces the integral by oversample_factor^2.
-        let downscaled = downscale(&reconstructed, oversample_factor);
+        let downscaled = reconstructed.downscale(oversample_factor);
 
         // Then normalise to the same scale as the generated filter by
         // dividing through by circle_area / oversample_factor^2
         let scale_factor = (oversample_factor as f64 * oversample_factor as f64) / circle_area;
-        let normalised = downscaled
+        let normalised = downscaled.data
             .iter()
             .map(|p| p * scale_factor)
             .collect::<Vec<_>>();

@@ -143,6 +143,7 @@ pub fn calculate_scan_weights(
 // Only real difference from Image is that the axes are labelled
 // "angles" and "rays". Seems worth separating them so that there's no
 // confusion.
+#[derive(Clone, Debug)]
 pub struct Scan {
     pub angles: usize,
     pub rays: usize,
