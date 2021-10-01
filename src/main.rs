@@ -194,7 +194,7 @@ fn scan_save(path: &Path, scan: &TomoScan) {
     let image = Image {
         width: scan.rays,
         height: scan.angles,
-        data: scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8).collect(),
+        data: scan.data.iter().map(|x| (x / 2_f64.sqrt())).collect(),
     };
 
     image.save(path);
@@ -282,11 +282,10 @@ fn reconstruct_matrix_invert(scan: &TomoScan, width: usize, height: usize) -> Im
     let input: DVector<f64> =
         DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
     let reconstruction = matrix * input;
-    let recon_as_u8: Vec<u8> = reconstruction.iter().map(|x| x.max(0.0).min(255.0) as u8).collect();
     Image {
         width,
         height,
-        data: recon_as_u8,
+        data: reconstruction.iter().copied().collect::<Vec<_>>(),
     }
 }
 
@@ -422,14 +421,12 @@ fn build_convolution_filter(
 // convolution-generation step and return it without attempting to
 // deconvolve. It does give a nice blurry version of the original!
 fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> Image {
-    let recon = generate_convolved_tomo(scan, width, height);
-
-    let recon_as_u8 = recon.iter().map(|x| x.max(0.0).min(255.0) as u8).collect::<Vec<_>>();
+    let data = generate_convolved_tomo(scan, width, height);
 
     Image {
         width,
         height,
-        data: recon_as_u8,
+        data: data,
     }
 }
 
@@ -840,7 +837,7 @@ mod tests {
         let image = Image {
             width: 1,
             height: 1,
-            data: vec![0],
+            data: vec![0.0],
         };
         let scanned = scan(&image, 4, 7).data;
         assert_eq!(scanned.len(), 4 * 7);
@@ -852,7 +849,7 @@ mod tests {
         let image = Image {
             width: 1,
             height: 1,
-            data: vec![1],
+            data: vec![1.0],
         };
         let expected = vec![
             // Horizontal
@@ -900,14 +897,14 @@ mod tests {
         let image1 = Image {
             width: 1,
             height: 1,
-            data: vec![1],
+            data: vec![1.0],
         };
         let scan1 = scan(&image1, 4, 7).data;
 
         let image2 = Image {
             width: 8,
             height: 8,
-            data: vec![1; 8 * 8],
+            data: vec![1.0; 8 * 8],
         };
         let scan2 = scan(&image2, 4, 7).data;
 
@@ -923,7 +920,7 @@ mod tests {
         let angles = 50;
 
         let src_img = Image::load(Path::new("images/test.png"));
-        let src_data: DMatrix<f64> = nalgebra::convert(src_img.to_dvector());
+        let src_data = DVector::from_iterator(src_img.width * src_img.height, src_img.data.iter().copied());
 
         let matrix = generate_forwards_matrix(src_img.width, src_img.height, angles, rays);
 
@@ -972,7 +969,7 @@ mod tests {
         let height = 8;
         let data = (0..8 * 8).map(|p| {
             let (x, y) = (p % 8, p / 8);
-            (x * 8 + if y >= 4 { 64 } else { 0 }) as u8
+            x as f64 * 8.0 + if y >= 4 { 64.0 } else { 0.0 }
         }).collect::<Vec<_>>();
 
         let src_img = Image {
@@ -1209,9 +1206,9 @@ mod tests {
             let r2 = x * x + y * y;
             if r2 <= oversample_factor as f64 * oversample_factor as f64 / 4.0 {
                 circle_area += 1.0;
-                1
+                1.0
             } else {
-                0
+                0.0
             }
         }).collect::<Vec<_>>();
 
@@ -1391,25 +1388,23 @@ mod tests {
 
         let res3 = shift(width, height, &res2, width / 2, height / 2);
 
-        let recon_as_u8: Vec<u8> = res3.iter().map(|x| x.max(0.0).min(255.0) as u8).collect();
-
         let img = Image {
             width,
             height,
-            data: recon_as_u8,
+            data: res3,
         };
 
         /* TODO: For debugging...
                 img.save(Path::new("full_cycle.png"));
 
-                let diff_as_u8: res3
+                let diff: res3
                     .iter().zip(src_img.data.iter())
                     .map(|(x, y)| {
                          let diff = *x as i32 - *y as i32;
-                         (diff + 128).max(0).min(255) as u8 })
+                         (diff + 128) as f64 })
                     .collect::<Vec<_>>();
 
-                let diff_img = Image { width, height, data: diff_as_u8 };
+                let diff_img = Image { width, height, data: diff };
                 diff_img.save(Path::new("full_cycle_diff.png"));
         */
 
@@ -1424,6 +1419,6 @@ mod tests {
 
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
-        assert!(average_error < 20.0);
+        assert!(average_error < 30.0);
     }
 }
