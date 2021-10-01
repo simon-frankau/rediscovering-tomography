@@ -1,0 +1,3 @@
+[toolchain]
+# "nightly" is currently (2021-10-01) needed to use nalgebra
+channel = "nightly"
