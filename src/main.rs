@@ -1,39 +1,11 @@
 use clap::{AppSettings, ArgEnum, Clap};
-use image::{GrayImage, Pixel};
 use nalgebra::base::{DMatrix, DVector};
 use rustfft::{num_complex::Complex64, FftDirection, FftPlanner};
 use std::path::Path;
 
-////////////////////////////////////////////////////////////////////////
-// Image load/save
-//
+mod tomo_image;
 
-struct TomoImage {
-    width: usize,
-    height: usize,
-    data: DVector<u8>,
-}
-
-fn image_load(path: &Path) -> TomoImage {
-    let orig_img = image::open(path).unwrap();
-    let grey_img = orig_img.into_luma8();
-
-    let width = grey_img.width() as usize;
-    let height = grey_img.height() as usize;
-
-    // Do anything that returns a vector.
-    TomoImage {
-        width,
-        height,
-        data: DVector::from_iterator(width * height, grey_img.pixels().map(|p| p.channels()[0])),
-    }
-}
-
-fn image_save(path: &Path, image: TomoImage) {
-    let v = image.data.iter().copied().collect::<Vec<u8>>();
-    let img = GrayImage::from_vec(image.width as u32, image.height as u32, v).unwrap();
-    img.save(path).unwrap();
-}
+use tomo_image::Image;
 
 ///////////////////////////////////////////////////////////////////////
 // Weight calculation
@@ -173,7 +145,7 @@ struct TomoScan {
 // 'angles' returns how many angles are scanned, over a 180 degree range
 // (only 180 degrees is needed due to symmetry)
 // 'rays' counts how many parallel rays will be spread over the object.
-fn scan(image: &TomoImage, angles: usize, rays: usize) -> TomoScan {
+fn scan(image: &Image, angles: usize, rays: usize) -> TomoScan {
     // We could just construct a great big matrix and apply that to
     // image.data, but given the inverse transformation is going to be
     // an inverse of that matrix, that feels a bit cheaty. So we'll
@@ -219,21 +191,18 @@ fn scan(image: &TomoImage, angles: usize, rays: usize) -> TomoScan {
 // Converts a scan to an image and saves it, perhaps useful for
 // understanding the transform.
 fn scan_save(path: &Path, scan: &TomoScan) {
-    let image = TomoImage {
+    let image = Image {
         width: scan.rays,
         height: scan.angles,
-        data: DVector::from_iterator(
-            scan.rays * scan.angles,
-            scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8),
-        ),
+        data: scan.data.iter().map(|x| (x / 2_f64.sqrt()) as u8).collect(),
     };
 
-    image_save(path, image);
+    image.save(path);
 }
 
 // If we're supporting saving, let's support loading.
 fn scan_load(path: &Path) -> TomoScan {
-    let image = image_load(path);
+    let image = Image::load(path);
     TomoScan {
         rays: image.width,
         angles: image.height,
@@ -308,17 +277,13 @@ fn generate_inverse_matrix(
     forwards.pseudo_inverse(1e-6).unwrap()
 }
 
-fn reconstruct_matrix_invert(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
+fn reconstruct_matrix_invert(scan: &TomoScan, width: usize, height: usize) -> Image {
     let matrix = generate_inverse_matrix(width, height, scan.angles, scan.rays);
     let input: DVector<f64> =
         DVector::from_iterator(scan.angles * scan.rays, scan.data.iter().copied());
     let reconstruction = matrix * input;
-    let recon_as_u8: DVector<u8> = DVector::from_iterator(
-        width * height,
-        reconstruction.iter().map(|x| x.max(0.0).min(255.0) as u8),
-    );
-
-    TomoImage {
+    let recon_as_u8: Vec<u8> = reconstruction.iter().map(|x| x.max(0.0).min(255.0) as u8).collect();
+    Image {
         width,
         height,
         data: recon_as_u8,
@@ -401,7 +366,7 @@ fn generate_convolved_tomo(scan: &TomoScan, w: usize, h: usize) -> Vec<f64> {
 // Build an image that represents the convolution filter applied by
 // converting an image and then running generate_convolved_tomo on it.
 //
-// Not an actual TomoImage as we want to stay in the f64 domain.
+// Not an actual Image as we want to stay in the f64 domain.
 //
 // Width and height are the width and height of the area representing
 // (-1..1, -1..1). "Overscan" is the fraction extra we slap on each
@@ -456,15 +421,12 @@ fn build_convolution_filter(
 // Not a real attempt at reconstruction, we just do the
 // convolution-generation step and return it without attempting to
 // deconvolve. It does give a nice blurry version of the original!
-fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> TomoImage {
+fn reconstruct_convolution(scan: &TomoScan, width: usize, height: usize) -> Image {
     let recon = generate_convolved_tomo(scan, width, height);
 
-    let recon_as_u8: DVector<u8> = DVector::from_iterator(
-        width * height,
-        recon.iter().map(|x| x.max(0.0).min(255.0) as u8),
-    );
+    let recon_as_u8 = recon.iter().map(|x| x.max(0.0).min(255.0) as u8).collect::<Vec<_>>();
 
-    TomoImage {
+    Image {
         width,
         height,
         data: recon_as_u8,
@@ -611,7 +573,7 @@ struct Opts {
 }
 
 // Generate a scan, and return the image it was generated from, if available.
-fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
+fn generate_scan(opts: &Opts) -> (Option<Image>, TomoScan) {
     // TODO: More graceful error handling than assert!/panic!.
 
     if let Some(name) = &opts.input_image {
@@ -620,7 +582,7 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
             "Please specify only one of --input-image and --input-scan"
         );
 
-        let image = image_load(Path::new(&name));
+        let image = Image::load(Path::new(&name));
         let resolution = image.width.max(image.height);
         let angles = opts.angles.unwrap_or_else(|| {
             eprintln!("--angles not specified, using {}.", resolution);
@@ -650,9 +612,9 @@ fn generate_scan(opts: &Opts) -> (Option<TomoImage>, TomoScan) {
 
 fn generate_reconstruction(
     opts: &Opts,
-    original: &Option<TomoImage>,
+    original: &Option<Image>,
     scan: &TomoScan,
-) -> TomoImage {
+) -> Image {
     // When choosing image size, prefer the command-line flag,
     // otherwise infer from original size, otherwise guess based on
     // scan size.
@@ -681,7 +643,7 @@ fn generate_reconstruction(
     }
 }
 
-fn calculate_error(base_image: &TomoImage, new_image: &TomoImage) {
+fn calculate_error(base_image: &Image, new_image: &Image) {
     if base_image.width != new_image.width {
         eprintln!("Base image width does not match reconstructed image width ({} vs. {}). Not calculating error.",
             base_image.width, new_image.width);
@@ -726,7 +688,7 @@ fn main() {
     }
 
     if let Some(name) = opts.output_image {
-        image_save(Path::new(&name), reconstruction);
+        reconstruction.save(Path::new(&name));
     }
 }
 
@@ -875,10 +837,10 @@ mod tests {
 
     #[test]
     fn test_scan_blank() {
-        let image = TomoImage {
+        let image = Image {
             width: 1,
             height: 1,
-            data: DVector::from_element(1, 0),
+            data: vec![0],
         };
         let scanned = scan(&image, 4, 7).data;
         assert_eq!(scanned.len(), 4 * 7);
@@ -887,10 +849,10 @@ mod tests {
 
     #[test]
     fn test_scan_full() {
-        let image = TomoImage {
+        let image = Image {
             width: 1,
             height: 1,
-            data: DVector::from_element(1, 1),
+            data: vec![1],
         };
         let expected = vec![
             // Horizontal
@@ -935,17 +897,17 @@ mod tests {
 
     #[test]
     fn test_scan_scales() {
-        let image1 = TomoImage {
+        let image1 = Image {
             width: 1,
             height: 1,
-            data: DVector::from_element(1, 1),
+            data: vec![1],
         };
         let scan1 = scan(&image1, 4, 7).data;
 
-        let image2 = TomoImage {
+        let image2 = Image {
             width: 8,
             height: 8,
-            data: DVector::from_element(8 * 8, 1),
+            data: vec![1; 8 * 8],
         };
         let scan2 = scan(&image2, 4, 7).data;
 
@@ -960,8 +922,8 @@ mod tests {
         let rays = 75;
         let angles = 50;
 
-        let src_img = image_load(Path::new("images/test.png"));
-        let src_data: DMatrix<f64> = nalgebra::convert(src_img.data.clone());
+        let src_img = Image::load(Path::new("images/test.png"));
+        let src_data: DMatrix<f64> = nalgebra::convert(src_img.to_dvector());
 
         let matrix = generate_forwards_matrix(src_img.width, src_img.height, angles, rays);
 
@@ -984,7 +946,7 @@ mod tests {
         let rays = 35;
         let angles = 40;
 
-        let src_img = image_load(Path::new("images/test.png"));
+        let src_img = Image::load(Path::new("images/test.png"));
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct_matrix_invert(&scan, src_img.width, src_img.height);
 
@@ -1008,12 +970,12 @@ mod tests {
 
         let width = 8;
         let height = 8;
-        let data = DVector::from_fn(8 * 8, |p, _| {
+        let data = (0..8 * 8).map(|p| {
             let (x, y) = (p % 8, p / 8);
             (x * 8 + if y >= 4 { 64 } else { 0 }) as u8
-        });
+        }).collect::<Vec<_>>();
 
-        let src_img = TomoImage {
+        let src_img = Image {
             width,
             height,
             data,
@@ -1236,7 +1198,7 @@ mod tests {
 
         let mut circle_area = 0.0;
 
-        let image = DVector::from_fn(o_width * o_height, |idx, _| {
+        let image = (0..o_width * o_height).map(|idx| {
             let (x_idx, y_idx) = (idx % o_width, idx / o_width);
             // Adjust to centre of pixels.
             let x = x_idx as f64 + 0.5 - o_width as f64 / 2.0;
@@ -1251,13 +1213,13 @@ mod tests {
             } else {
                 0
             }
-        });
+        }).collect::<Vec<_>>();
 
         // Make sure we don't lose precision in the scan.
         let rays = o_width * 2;
         let angles = o_height * 2;
 
-        let src_img = TomoImage {
+        let src_img = Image {
             width: o_width,
             height: o_height,
             data: image,
@@ -1383,7 +1345,7 @@ mod tests {
         let rays = 35;
         let angles = 40;
 
-        let src_img = image_load(Path::new("images/test.png"));
+        let src_img = Image::load(Path::new("images/test.png"));
         let scan = scan(&src_img, angles, rays);
 
         let width = src_img.width;
@@ -1429,28 +1391,26 @@ mod tests {
 
         let res3 = shift(width, height, &res2, width / 2, height / 2);
 
-        let recon_as_u8: DVector<u8> = DVector::from_iterator(
-            width * height,
-            res3.iter().map(|x| x.max(0.0).min(255.0) as u8),
-        );
+        let recon_as_u8: Vec<u8> = res3.iter().map(|x| x.max(0.0).min(255.0) as u8).collect();
 
-        let img = TomoImage {
+        let img = Image {
             width,
             height,
             data: recon_as_u8,
         };
 
         /* TODO: For debugging...
-                image_save(Path::new("full_cycle.png"), img);
+                img.save(Path::new("full_cycle.png"));
 
-                let diff_as_u8: DVector<u8> = DVector::from_iterator(width * height, res3
+                let diff_as_u8: res3
                     .iter().zip(src_img.data.iter())
                     .map(|(x, y)| {
                          let diff = *x as i32 - *y as i32;
-                         (diff + 128).max(0).min(255) as u8 }));
+                         (diff + 128).max(0).min(255) as u8 })
+                    .collect::<Vec<_>>();
 
-                let diff_img = TomoImage { width, height, data: diff_as_u8 };
-                image_save(Path::new("full_cycle_diff.png"), diff_img);
+                let diff_img = Image { width, height, data: diff_as_u8 };
+                diff_img.save(Path::new("full_cycle_diff.png"));
         */
 
         let total_error: f64 = src_img
