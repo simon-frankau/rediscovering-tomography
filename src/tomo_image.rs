@@ -86,4 +86,14 @@ impl Image {
             data,
         }
     }
+
+    // Normalise so that x is transformed to 1.0.
+    pub fn normalise(&self, x: f64) -> Image {
+        let data = self.data.iter().map(|y| y / x).collect::<Vec<_>>();
+        Image {
+            width: self.width,
+            height: self.height,
+            data
+        }
+    }
 }

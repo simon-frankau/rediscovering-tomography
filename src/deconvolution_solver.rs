@@ -73,7 +73,7 @@ impl FFTImage {
         fft.process_with_scratch(&mut self.data, &mut scratch);
     }
 
-    // Core of 2D FFT, used by fft_forward and fft_inverse.
+    // Core of 2D FFT, used by from_image and to_image.
     fn fourier_transform(self, dir: FftDirection) -> FFTImage {
         let mut tmp = FFTImage {
             width:self.width,
@@ -89,7 +89,8 @@ impl FFTImage {
         tmp
     }
 
-    fn fft_forward(img: &Image) -> FFTImage {
+    // Construct an FFT from an image.
+    fn from_image(img: &Image) -> FFTImage {
         let input = FFTImage {
             width: img.width,
             height: img.height,
@@ -98,13 +99,49 @@ impl FFTImage {
         input.fourier_transform(FftDirection::Forward)
     }
 
-    fn fft_inverse(&self) -> Image {
+    // Create an image from the FFT.
+    fn to_image(&self) -> Image {
         let output = self.clone().fourier_transform(FftDirection::Inverse);
         Image {
             width: self.width,
             height: self.height,
             data: from_complex(&output.data),
         }
+    }
+
+    // Create the inverse of an FFT. Undoes a convolution.
+    fn invert(&mut self, threshold: f64) {
+        // Square to match the norm.
+        let t = threshold * threshold;
+        self.data = self
+            .data
+            .iter()
+            .map(|z| {
+                // If a coefficient is tiny, this means a frequency
+                // component is basically killed. Rather than take
+                // the reciprocal and produce a huge number that will
+                // produce a noisy inverse, we just live with that
+                // frequency being killed off.
+                if z.norm_sqr() < t {
+                    Complex64::new(0.0, 0.0)
+                } else {
+                    z.inv()
+                }
+            })
+            .collect::<Vec<_>>();
+    }
+
+    // Apply a convolution, which is a pointwise multiplication in the
+    // frequency domain.
+    fn convolve(&mut self, filter: &FFTImage) {
+        assert_eq!(self.width, filter.width);
+        assert_eq!(self.height, filter.height);
+
+        self.data = self.data
+            .iter()
+            .zip(filter.data.iter())
+            .map(|(z1, z2)| z1 * z2)
+            .collect::<Vec<_>>();
     }
 }
 
@@ -120,10 +157,14 @@ mod tests {
     fn test_transpose() {
         let width = 5;
         let height = 7;
+        let data = (0..(height * width))
+            .map(|x| Complex64::new(x as f64, 0.0))
+            .collect::<Vec<_>>();
+
         let v = FFTImage {
             width,
             height,
-            data: (0..(height * width)).map(|x| Complex64::new(x as f64, 0.0)).collect::<Vec<_>>(),
+            data,
         };
 
         let mut vt = v.clone();
@@ -144,19 +185,23 @@ mod tests {
         // Give it some awkward sizes. :)
         let width = 13;
         let height = 17;
+        let data = (0..(height * width))
+            .map(|x| x as f64)
+            .collect::<Vec<_>>();
 
         let input = Image {
             width,
             height,
-            data: (0..(height * width)).map(|x| x as f64).collect::<Vec<_>>(),
+            data,
         };
 
-        let fft = FFTImage::fft_forward(&input);
-        let output = fft.fft_inverse();
+        let fft = FFTImage::from_image(&input);
+        let inv = fft.to_image();
+        let output = inv.normalise((inv.width * inv.height) as f64);
 
         assert_eq!(input.data.len(), output.data.len());
         for (in_val, out_val) in input.data.iter().zip(output.data.iter()) {
-            assert!((in_val - out_val / (width * height) as f64).abs() < 1e-10);
+            assert!((in_val - out_val).abs() < 1e-10);
         }
     }
 
@@ -164,34 +209,22 @@ mod tests {
     fn test_deconvolve() {
         let (width, height) = (65, 65);
 
-        let generated = build_convolution_filter(width, height, 0.0);
+        // Generate the forward filter, and the inversion of the FFT
+        // of the filter, to undo it.
+        let filter = build_convolution_filter(width, height, 0.0);
+        let mut filter_fft = FFTImage::from_image(&filter);
+        filter_fft.invert(1e-7);
 
-        let deconvolution_fft = FFTImage::fft_forward(&generated)
-            .data
-            .iter()
-            .map(Complex64::inv)
-            .collect::<Vec<_>>();
+        // Apply the deconvolution to the filter and convert back to
+        // image domain - should produce a 1.0 at (0, 0), and 0.0
+        // otherwise.
+        let mut fftimage = FFTImage::from_image(&filter);
+        fftimage.convolve(&filter_fft);
+        let res = fftimage.to_image();
+        let norm_res = res.normalise((res.width * res.height) as f64);
 
-        let fftd = FFTImage::fft_forward(&generated).data;
-
-        let decon = fftd
-            .iter()
-            .zip(deconvolution_fft.iter())
-            .map(|(z1, z2)| z1 * z2)
-            .collect::<Vec<_>>();
-
-        let res = FFTImage {
-            width,
-            height,
-            data: decon
-        }.fft_inverse().data;
-
-        let res2 = res
-            .iter()
-            .map(|x| x / (width * height) as f64)
-            .collect::<Vec<_>>();
-
-        for (i, actual) in res2.iter().enumerate() {
+        // Check this!
+        for (i, actual) in norm_res.data.iter().enumerate() {
             let expected = if i == 0 { 1.0 } else { 0.0 };
             assert!((actual - expected).abs() <= 1e-10);
         }
@@ -202,61 +235,32 @@ mod tests {
     fn test_end_to_end_deconvolve() {
         // Choose numbers different from the image dimensions, to
         // avoid missing bugs.
-        let rays = 35;
-        let angles = 40;
+        let (rays, angles) = (35, 40);
 
         let src_img = Image::load(Path::new("images/test.png"));
         let scan = scan(&src_img, angles, rays);
 
-        let width = src_img.width;
-        let height = src_img.height;
+        let (width, height) = (src_img.width, src_img.height);
 
-        let dst_img = crate::convolution_solver::reconstruct(&scan, width, height);
+        let convolved =
+            crate::convolution_solver::reconstruct(&scan, width, height);
 
-        let generated = build_convolution_filter(width, height, 0.0);
+        let filter = build_convolution_filter(width, height, 0.0);
 
-        let deconvolution_fft = FFTImage::fft_forward(&generated)
-            .data
-            .iter()
-            .map(|z| {
-                if z.norm_sqr() < 1e-4 {
-                    Complex64::new(0.0, 0.0)
-                } else {
-                    z.inv()
-                }
-            })
-            .collect::<Vec<_>>();
+        let mut filter_fft = FFTImage::from_image(&filter);
+        filter_fft.invert(1e-2);
 
-        // TODO: Maybe use something that doesn't convert to matrix...
-        let img = dst_img.data.iter().map(|x| *x as f64).collect::<Vec<f64>>();
+        let mut fft = FFTImage::from_image(&convolved);
+        fft.convolve(&filter_fft);
 
-        let fftd = FFTImage::fft_forward(&Image { width, height, data: img });
-
-        let decon = fftd.data
-            .iter()
-            .zip(deconvolution_fft.iter())
-            .map(|(z1, z2)| z1 * z2)
-            .collect::<Vec<_>>();
-
-        let res = FFTImage { width, height, data: decon }.fft_inverse().data;
-
-        let res2 = res
-            .iter()
-            .map(|x| x / (width * height) as f64)
-            .collect::<Vec<_>>();
-
-        let res3 = Image {
-            width,
-            height,
-            data: res2,
-        };
-
-        let img = res3.shift(width / 2, height / 2);
+        let res = fft.to_image();
+        let norm_res = res.normalise((res.width * res.height) as f64);
+        let dst_img = norm_res.shift(width / 2, height / 2);
 
         /* TODO: For debugging...
-                img.save(Path::new("full_cycle.png"));
+                dst_img.save(Path::new("full_cycle.png"));
 
-                let diff: img.data
+                let diff: dst_img.data
                     .iter().zip(src_img.data.iter())
                     .map(|(x, y)| {
                          let diff = *x as i32 - *y as i32;
@@ -270,11 +274,11 @@ mod tests {
         let total_error: f64 = src_img
             .data
             .iter()
-            .zip(img.data.iter())
+            .zip(dst_img.data.iter())
             .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
             .sum();
 
-        let average_error = total_error / (dst_img.width * dst_img.height) as f64;
+        let average_error = total_error / (width * height) as f64;
 
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
