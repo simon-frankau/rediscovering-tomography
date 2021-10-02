@@ -184,6 +184,36 @@ Right now we have `--algorithm=matrix-inversion` as the default
 existing algorithm, and `--algorithm=convolution` as generating the
 (not deconvolved) integral version.
 
+# Further next steps
+
+Deconvolution requires performing the inverse of a convolution, which
+can be done by taking the Fourier transform of the filter, and taking
+the reciprocal of all its values (since convolution is just
+multiplication in the frequency domain).
+
+One tricky step with this is that if a frequency is highly attenuated
+by the filter, the coefficient in the Fourier domain will be tiny, its
+reciprocal huge, and the deconvolution can be incredibly noisy. So we
+just drop frequencies which have really small coefficients, and live
+with dropping some frequencies.
+
+The next piece of trickiness is to work out to size the filters. The
+1/r convolution filter that performing the scan and then integrating
+gives us an infinitely-wide filter, that only tails off gradually with
+distance. It's possible we'll only get good results if we create an
+integral-of-scan that's much larger than the original image. How big
+does the filter need to be? Well, we can take the deconvolution filter
+FFT we just created, and bring it back to the image domain.
+
+If we do this, we find there's a really small kernel with large
+coefficients, and the rest is hardly used (indeed, I don't know how
+wide the kernel is if we did this algebraically, rather than with
+throw-it-at-the-wall-and-see-what-sticks numerical methods). Using a
+FFT to represent a tiny little kernel seems both inefficient and
+unlikely to be accurate (a tiny kernel having a lot of high-frequency
+components), so the next step is to try to apply the kernel in the
+image domain and see how well it performs.
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?

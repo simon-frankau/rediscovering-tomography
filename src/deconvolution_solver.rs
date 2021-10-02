@@ -260,7 +260,7 @@ mod tests {
         /* TODO: For debugging...
                 dst_img.save(Path::new("full_cycle.png"));
 
-                let diff: dst_img.data
+                let diff = dst_img.data
                     .iter().zip(src_img.data.iter())
                     .map(|(x, y)| {
                          let diff = *x as i32 - *y as i32;
@@ -283,5 +283,41 @@ mod tests {
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
         assert!(average_error < 30.0);
+    }
+
+    // TODO: Another hack, generating the deconvolution filter and
+    // looking to see how wide the main contributing part of this kernel
+    // is.
+    #[test]
+    fn test_generate_decon_filter() {
+        let (width, height) = (65, 65);
+
+        let filter = build_convolution_filter(width, height, 5.0);
+
+        let mut filter_fft = FFTImage::from_image(&filter);
+        filter_fft.invert(1e-5);
+        let inv_filter = filter_fft.to_image();
+
+        let mut ext_data = inv_filter.data.iter().enumerate()
+            .map(|(idx, x)| (idx / inv_filter.width, idx % inv_filter.width, *x))
+            .collect::<Vec<_>>();
+
+        ext_data.sort_by(|(_, _, a), (_, _, b)| a.abs().partial_cmp(&b.abs()).unwrap());
+
+        let norm = 1.0 / (inv_filter.width * inv_filter.height) as f64;
+        for (y, x, v) in ext_data.iter().rev().take(100).collect::<Vec<_>>() {
+            println!("{} {} {} {}", y, x, v * norm, (*y as isize - (inv_filter.height / 2 + 1)).abs() + (*x as isize - (inv_filter.width / 2 + 1).abs());
+        }
+
+        let fixed = inv_filter.data.iter()
+            .map(|x| (x / 250000.0) + 128.0)
+            .collect::<Vec<_>>();
+
+        let fixed_image = Image {
+            data: fixed,
+            ..inv_filter
+        };
+
+        fixed_image.save(Path::new("inv_filter.png"));
     }
 }
