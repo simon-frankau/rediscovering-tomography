@@ -214,6 +214,15 @@ unlikely to be accurate (a tiny kernel having a lot of high-frequency
 components), so the next step is to try to apply the kernel in the
 image domain and see how well it performs.
 
+# Again...
+
+If I try using a small kernel (`test_decon_kernel`), it locally
+sharpens the image, but there is still some wider blurriness. I guess
+this is because, while the weight of far-away pixels is low, there are
+a lot of them, so they do meaningfully contribute. I will now try
+going back to an FFT/large-size convolution filter approach, and see
+if this works better...
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?

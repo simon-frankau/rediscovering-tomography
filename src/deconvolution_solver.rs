@@ -27,7 +27,7 @@ fn to_complex(v: &[f64]) -> Vec<Complex64> {
 // us to define away the error case of the complex component being
 // non-trivial, but we're keeping things simple.
 fn from_complex(v: &[Complex64]) -> Vec<f64> {
-    const EPSILON: f64 = 1e-7;
+    const EPSILON: f64 = 1e-5;
     assert!(
         v.iter()
             .map(|z| z.im.abs())
@@ -306,7 +306,7 @@ mod tests {
 
         let norm = 1.0 / (inv_filter.width * inv_filter.height) as f64;
         for (y, x, v) in ext_data.iter().rev().take(100).collect::<Vec<_>>() {
-            println!("{} {} {} {}", y, x, v * norm, (*y as isize - (inv_filter.height / 2 + 1)).abs() + (*x as isize - (inv_filter.width / 2 + 1).abs());
+            println!("{} {} {} {}", y, x, v * norm, (*y as isize - (inv_filter.height as isize / 2 + 1)).abs() + (*x as isize - (inv_filter.width as isize / 2 + 1).abs()));
         }
 
         let fixed = inv_filter.data.iter()
@@ -319,5 +319,78 @@ mod tests {
         };
 
         fixed_image.save(Path::new("inv_filter.png"));
+    }
+
+    // TODO: Attempt deconvolving using a simple image-space kernel.
+    #[test]
+    fn test_decon_kernel() {
+        // First, create the convoluted image to deconvolve.
+
+        // Choose numbers different from the image dimensions, to
+        // avoid missing bugs.
+        let (rays, angles) = (35, 40);
+
+        let src_img = Image::load(Path::new("images/test.png"));
+        let scan = scan(&src_img, angles, rays);
+
+        let (width, height) = (src_img.width, src_img.height);
+
+        let convolved =
+            crate::convolution_solver::reconstruct(&scan, width, height);
+
+        // Then generate the image-space kernel.
+        let filter = build_convolution_filter(width | 1, height | 1, 0.0);
+        let mut filter_fft = FFTImage::from_image(&filter);
+        filter_fft.invert(1e-5);
+        let inv_filter = filter_fft.to_image();
+
+        let (k_width, k_height) = (5, 5);
+        let k_x_offset = (inv_filter.width - k_width + 1) / 2;
+        let k_y_offset = (inv_filter.height - k_height + 1) / 2;
+
+        let mut kernel = Vec::new();
+        for y in 0..k_height {
+            for x in 0..k_width {
+                kernel.push(inv_filter.data[(y + k_y_offset) * inv_filter.width + x + k_x_offset]);
+            }
+        }
+
+        // Then apply the kernel.
+        let mut res = Vec::new();
+        for y in 0..(convolved.height - k_height + 1) {
+            for x in 0..(convolved.width - k_width + 1) {
+                let mut pixel = 0.0;
+                for y2 in 0..k_height {
+                    for x2 in 0..k_width {
+                        pixel += kernel[y2 * k_width + x2] *
+                                 convolved.data[(y + y2) * convolved.width + (x + x2)];
+                    }
+                }
+                res.push(pixel / (inv_filter.width * inv_filter.height) as f64);
+            }
+        }
+
+        let max = res.iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        let min = res.iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        let res2 = res
+            .iter()
+            .map(|x| (x - min) * 255.0 / (max - min))
+            .collect::<Vec<_>>();
+
+        // Image size is reduced by the size of the kernel, but this
+        // is enough for a quick hack.
+        let fixed_image = Image {
+            width: convolved.width - k_width + 1,
+            height: convolved.height - k_height + 1,
+            data: res2,
+        };
+
+        fixed_image.save(Path::new("kernel.png"));
     }
 }
