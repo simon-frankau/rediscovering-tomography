@@ -178,7 +178,7 @@ mod tests {
                 let x = (x_idx as f64 - x_offset) * x_step;
 
                 let r = (x * x + y * y).sqrt();
-                let weight = filter.data[y_idx * filter.width + x_idx];
+                let weight = filter[(x_idx, y_idx)];
                 if r <= 1.2 {
                     integral_120 += weight;
                 }
@@ -229,7 +229,7 @@ mod tests {
                 let x = (x_idx as f64 - x_offset) * x_step;
 
                 let r = (x * x + y * y).sqrt();
-                let weight = filter.data[y_idx * filter.width + x_idx];
+                let weight = filter[(x_idx, y_idx)];
                 if r <= 1.2 {
                     integral_120 += weight;
                 }
@@ -266,10 +266,10 @@ mod tests {
             for x1 in 0..filter.width {
                 let x2 = filter.width - 1 - x1;
 
-                let p11 = filter.data[y1 * filter.width + x1];
-                let p12 = filter.data[y1 * filter.width + x2];
-                let p21 = filter.data[y2 * filter.width + x1];
-                let p22 = filter.data[y2 * filter.width + x2];
+                let p11 = filter[(x1, y1)];
+                let p12 = filter[(x2, y1)];
+                let p21 = filter[(x1, y2)];
+                let p22 = filter[(x2, y2)];
 
                 assert_eq!(p11, p12);
                 assert_eq!(p11, p21);
@@ -297,8 +297,8 @@ mod tests {
             for x in 0..filter_no_over.width {
                 let x2 = x + w_adj;
 
-                let p1 = filter_no_over.data[y * filter_no_over.width + x];
-                let p2 = filter.data[y2 * filter.width + x2];
+                let p1 = filter_no_over[(x, y)];
+                let p2 = filter[(x2, y2)];
 
                 assert_eq!(p1, p2);
             }

@@ -187,7 +187,7 @@ pub fn scan(image: &Image, angles: usize, rays: usize) -> Scan {
             let weights = calculate_scan_weights(ray_start, ray_end, image.width, image.height);
             let integral = weights
                 .iter()
-                .map(|(x, y, wt)| image.data[y * image.width + x] as f64 * wt)
+                .map(|(x, y, wt)| image[(*x, *y)] * wt)
                 .sum();
             data.push(integral);
         }

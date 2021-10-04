@@ -5,6 +5,7 @@
 //
 
 use image::{GrayImage, Pixel};
+use std::ops::{Index, IndexMut};
 use std::path::Path;
 
 #[derive(Clone, Debug)]
@@ -12,6 +13,19 @@ pub struct Image {
     pub width: usize,
     pub height: usize,
     pub data: Vec<f64>,
+}
+
+impl Index<(usize, usize)> for Image {
+    type Output = f64;
+    fn index<'a>(&'a self, (x, y): (usize, usize)) -> &'a f64 {
+        &self.data[y * self.width + x]
+    }
+}
+
+impl IndexMut<(usize, usize)> for Image {
+    fn index_mut<'a>(&'a mut self, (x, y): (usize, usize)) -> &'a mut f64 {
+        &mut self.data[y * self.width + x]
+    }
 }
 
 impl Image {
@@ -51,7 +65,7 @@ impl Image {
                 let mut pixel: f64 = 0.0;
                 for sub_y in 0..factor {
                     for sub_x in 0..factor {
-                        pixel += self.data[(y + sub_y) * self.width + (x + sub_x)];
+                        pixel += self[(x + sub_x, y + sub_y)];
                     }
                 }
                 data.push(pixel / (factor as f64 * factor as f64));
@@ -76,7 +90,7 @@ impl Image {
             for x in 0..width {
                 let src_y = (y + y_shift) % height;
                 let src_x = (x + x_shift) % width;
-                data.push(self.data[src_y * width + src_x]);
+                data.push(self[(src_x, src_y)]);
             }
         }
 
@@ -88,8 +102,8 @@ impl Image {
     }
 
     // Normalise so that x is transformed to 1.0.
-    pub fn normalise(&self, x: f64) -> Image {
-        let data = self.data.iter().map(|y| y / x).collect::<Vec<_>>();
+    pub fn normalise(&self, a: f64) -> Image {
+        let data = self.data.iter().map(|b| b / a).collect::<Vec<_>>();
         Image {
             width: self.width,
             height: self.height,

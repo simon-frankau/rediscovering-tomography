@@ -6,6 +6,7 @@
 //
 
 use rustfft::{num_complex::Complex64, FftDirection, FftPlanner};
+use std::ops::{Index, IndexMut};
 use std::path::Path;
 
 use crate::tomo_image::Image;
@@ -49,13 +50,26 @@ struct FFTImage {
     data: Vec<Complex64>,
 }
 
+impl Index<(usize, usize)> for FFTImage {
+    type Output = Complex64;
+    fn index<'a>(&'a self, (x, y): (usize, usize)) -> &'a Complex64 {
+        &self.data[y * self.width + x]
+    }
+}
+
+impl IndexMut<(usize, usize)> for FFTImage {
+    fn index_mut<'a>(&'a mut self, (x, y): (usize, usize)) -> &'a mut Complex64 {
+        &mut self.data[y * self.width + x]
+    }
+}
+
 impl FFTImage {
     // Transpose, mutating self. Used by fourier_transform.
     fn transpose(&mut self) {
         let mut new_data = Vec::with_capacity(self.width * self.height);
         for y in 0..self.width {
             for x in 0..self.height {
-                new_data.push(self.data[x * self.width + y]);
+                new_data.push(self[(y, x)]);
             }
         }
         self.data = new_data;
@@ -175,7 +189,7 @@ mod tests {
 
         for y in 0..height {
             for x in 0..width {
-                assert_eq!(v.data[y * v.width + x], vt.data[x * vt.width + y]);
+                assert_eq!(v[(x, y)], vt[(y, x)]);
             }
         }
     }
@@ -351,7 +365,7 @@ mod tests {
         let mut kernel = Vec::new();
         for y in 0..k_height {
             for x in 0..k_width {
-                kernel.push(inv_filter.data[(y + k_y_offset) * inv_filter.width + x + k_x_offset]);
+                kernel.push(inv_filter[(x + k_x_offset, y + k_y_offset)]);
             }
         }
 
@@ -363,7 +377,7 @@ mod tests {
                 for y2 in 0..k_height {
                     for x2 in 0..k_width {
                         pixel += kernel[y2 * k_width + x2] *
-                                 convolved.data[(y + y2) * convolved.width + (x + x2)];
+                                 convolved[(x + x2, y + y2)];
                     }
                 }
                 res.push(pixel / (inv_filter.width * inv_filter.height) as f64);
