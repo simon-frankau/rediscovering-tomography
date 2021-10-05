@@ -360,16 +360,13 @@ mod tests {
         // Then normalise to the same scale as the generated filter by
         // dividing through by circle_area / oversample_factor^2
         let scale_factor = (oversample_factor as f64 * oversample_factor as f64) / circle_area;
-        let normalised = downscaled.data
-            .iter()
-            .map(|p| p * scale_factor)
-            .collect::<Vec<_>>();
+        let normalised = downscaled.scale_values(scale_factor);
 
         // Calculate the total error, integrated over the full image.
-        assert_eq!(generated.len(), normalised.len());
+        assert_eq!(generated.len(), normalised.data.len());
         let error: f64 = generated
             .iter()
-            .zip(normalised.iter())
+            .zip(normalised.data.iter())
             .map(|(a, b)| (a - b).abs())
             .sum();
 

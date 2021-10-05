@@ -169,10 +169,10 @@ pub fn scan(image: &Image, angles: usize, rays: usize) -> Scan {
     // Image is inside an axis-aligned square -1..1, so max radius is sqrt(2).
     let ray_offset = 2_f64.sqrt();
     let ray_step = 2.0 * ray_offset / (rays - 1) as f64;
-    for angle in (0..angles).map(|x| x as f64 * angle_step) {
+    for angle in (0..angles).map(|idx| idx as f64 * angle_step) {
         let axis_start = (angle.cos(), angle.sin());
         let axis_end = (-axis_start.0, -axis_start.1);
-        for ray in (0..rays).map(|x| x as f64 * ray_step - ray_offset) {
+        for ray in (0..rays).map(|idx| idx as f64 * ray_step - ray_offset) {
             // Rays are parallel, so move end points at a normal.
             let parallel_offset = (ray * -axis_start.1, ray * axis_start.0);
             let ray_start = (
@@ -207,7 +207,7 @@ impl Scan {
         let image = Image {
             width: self.rays,
             height: self.angles,
-            data: self.data.iter().map(|x| (x / 2_f64.sqrt())).collect(),
+            data: self.data.iter().map(|p| p / 2_f64.sqrt()).collect(),
         };
 
         image.save(path);
@@ -222,7 +222,7 @@ impl Scan {
             data: image
                 .data
                 .iter()
-                .map(|x| *x as f64 * 2_f64.sqrt())
+                .map(|p| *p as f64 * 2_f64.sqrt())
                 .collect(),
         }
     }
@@ -234,7 +234,10 @@ mod tests {
 
     // We may sometimes *just* touch the corner of a pixel. Skip them.
     fn assert_eq_pixels(expected: &[(usize, usize, f64)], actual: &[(usize, usize, f64)]) {
-        let filtered_actual: Vec<_> = actual.into_iter().filter(|(_, _, w)| *w > 1e-14).collect();
+        let filtered_actual: Vec<_> = actual
+            .into_iter()
+            .filter(|(_, _, w)| *w > 1e-14)
+            .collect();
 
         assert_eq!(expected.len(), filtered_actual.len());
         for ((x1, y1, w1), (x2, y2, w2)) in expected.iter().zip(filtered_actual.iter()) {
@@ -376,7 +379,7 @@ mod tests {
         };
         let scanned = scan(&image, 4, 7).data;
         assert_eq!(scanned.len(), 4 * 7);
-        assert!(scanned.iter().all(|x| *x == 0.0))
+        assert!(scanned.iter().all(|p| *p == 0.0))
     }
 
     #[test]

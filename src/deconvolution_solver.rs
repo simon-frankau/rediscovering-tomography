@@ -21,7 +21,7 @@ use crate::convolution_solver::{build_convolution_filter};
 // We're not going to do any fancy real-valued optimisations for the
 // FFT, we simply convert to and from complex numbers.
 fn to_complex(v: &[f64]) -> Vec<Complex64> {
-    v.iter().map(|x| Complex64::new(*x, 0.0)).collect()
+    v.iter().map(|re| Complex64::new(*re, 0.0)).collect()
 }
 
 // Doing a clever real-to-complex conversion for the FFTs would allow
@@ -36,7 +36,7 @@ fn from_complex(v: &[Complex64]) -> Vec<f64> {
             .unwrap()
             < EPSILON
     );
-    v.iter().map(|x| x.re).collect()
+    v.iter().map(|z| z.re).collect()
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -159,10 +159,6 @@ impl FFTImage {
     }
 }
 
-// TODO: Implement some tests
-// * Implement convolution via FFT, check it works the same.
-// * Improve accuracy of deconvolution.
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,7 +168,7 @@ mod tests {
         let width = 5;
         let height = 7;
         let data = (0..(height * width))
-            .map(|x| Complex64::new(x as f64, 0.0))
+            .map(|re| Complex64::new(re as f64, 0.0))
             .collect::<Vec<_>>();
 
         let v = FFTImage {
@@ -194,13 +190,15 @@ mod tests {
         }
     }
 
+    // Test that doing an FFT and then inverting it gets us back to
+    // the starting image.
     #[test]
     fn test_double_fft() {
         // Give it some awkward sizes. :)
         let width = 13;
         let height = 17;
         let data = (0..(height * width))
-            .map(|x| x as f64)
+            .map(|p| p as f64)
             .collect::<Vec<_>>();
 
         let input = Image {
@@ -211,7 +209,7 @@ mod tests {
 
         let fft = FFTImage::from_image(&input);
         let inv = fft.to_image();
-        let output = inv.normalise((inv.width * inv.height) as f64);
+        let output = inv.scale_values(1.0 / (inv.width * inv.height) as f64);
 
         assert_eq!(input.data.len(), output.data.len());
         for (in_val, out_val) in input.data.iter().zip(output.data.iter()) {
@@ -219,8 +217,9 @@ mod tests {
         }
     }
 
+    // Test that deconvolving the filter returns an impulse function.
     #[test]
-    fn test_deconvolve() {
+    fn test_filter_deconvolve() {
         let (width, height) = (65, 65);
 
         // Generate the forward filter, and the inversion of the FFT
@@ -235,7 +234,7 @@ mod tests {
         let mut fftimage = FFTImage::from_image(&filter);
         fftimage.convolve(&filter_fft);
         let res = fftimage.to_image();
-        let norm_res = res.normalise((res.width * res.height) as f64);
+        let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
 
         // Check this!
         for (i, actual) in norm_res.data.iter().enumerate() {
@@ -244,9 +243,12 @@ mod tests {
         }
     }
 
-    // TODO: This function is messy, but we'll submit first and tidy later.
+    // Test that performing a basic deconvolution, without paying
+    // attention to any details, gets a rough reconstruction.
     #[test]
-    fn test_end_to_end_deconvolve() {
+    fn test_basic_image_deconvolve() {
+        // 1. Scan and generate the convolved image.
+
         // Choose numbers different from the image dimensions, to
         // avoid missing bugs.
         let (rays, angles) = (35, 40);
@@ -256,34 +258,31 @@ mod tests {
 
         let (width, height) = (src_img.width, src_img.height);
 
-        let convolved =
+        let convolved_img =
             crate::convolution_solver::reconstruct(&scan, width, height);
 
+        // 2. Build the deconvolution filter in frequency space.
         let filter = build_convolution_filter(width, height, 0.0);
 
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-2);
 
-        let mut fft = FFTImage::from_image(&convolved);
+        // 3. Perform the deconvolution.
+        let mut fft = FFTImage::from_image(&convolved_img);
         fft.convolve(&filter_fft);
-
         let res = fft.to_image();
-        let norm_res = res.normalise((res.width * res.height) as f64);
+
+        let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
         let dst_img = norm_res.shift(width / 2, height / 2);
 
-        /* TODO: For debugging...
-                dst_img.save(Path::new("full_cycle.png"));
+        // TODO: For debugging...
+            dst_img.save(Path::new("full_cycle.png"));
 
-                let diff = dst_img.data
-                    .iter().zip(src_img.data.iter())
-                    .map(|(x, y)| {
-                         let diff = *x as i32 - *y as i32;
-                         (diff + 128) as f64 })
-                    .collect::<Vec<_>>();
-
-                let diff_img = Image { width, height, data: diff };
-                diff_img.save(Path::new("full_cycle_diff.png"));
-        */
+            dst_img
+                .diff(&src_img)
+                .offset_values(128.0)
+                .save(Path::new("full_cycle_diff.png"));
+        //
 
         let total_error: f64 = src_img
             .data
@@ -299,46 +298,56 @@ mod tests {
         assert!(average_error < 30.0);
     }
 
-    // TODO: Another hack, generating the deconvolution filter and
+    // Another hack, generating the deconvolution filter and
     // looking to see how wide the main contributing part of this kernel
     // is.
+    //
+    // TODO: Convert into a test, showing that the biggest weights
+    // are in the centre, and the relative sum of the weights.
     #[test]
     fn test_generate_decon_filter() {
         let (width, height) = (65, 65);
 
         let filter = build_convolution_filter(width, height, 5.0);
-
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-5);
         let inv_filter = filter_fft.to_image();
 
         let mut ext_data = inv_filter.data.iter().enumerate()
-            .map(|(idx, x)| (idx / inv_filter.width, idx % inv_filter.width, *x))
+            .map(|(idx, p)| (idx / inv_filter.width,
+                             idx % inv_filter.width,
+                             *p))
             .collect::<Vec<_>>();
 
-        ext_data.sort_by(|(_, _, a), (_, _, b)| a.abs().partial_cmp(&b.abs()).unwrap());
+        ext_data
+            .sort_by(|(_, _, a), (_, _, b)| a
+                .abs()
+                .partial_cmp(&b.abs())
+            .unwrap());
 
+        // Print out highest weights (normalised), and (x, y) offset
+        // from the filter centre.
+        let centre_x = inv_filter.width as isize / 2 + 1;
+        let centre_y = inv_filter.height as isize / 2 + 1;
         let norm = 1.0 / (inv_filter.width * inv_filter.height) as f64;
         for (y, x, v) in ext_data.iter().rev().take(100).collect::<Vec<_>>() {
-            println!("{} {} {} {}", y, x, v * norm, (*y as isize - (inv_filter.height as isize / 2 + 1)).abs() + (*x as isize - (inv_filter.width as isize / 2 + 1).abs()));
+            let x_dist = *x as isize - centre_x.abs();
+            let y_dist = *y as isize - centre_y.abs();
+            // Report Manhattan distance from centre of filter.
+            println!("{} {} {} {}", y, x, v * norm, x_dist + y_dist);
         }
 
-        let fixed = inv_filter.data.iter()
-            .map(|x| (x / 250000.0) + 128.0)
-            .collect::<Vec<_>>();
-
-        let fixed_image = Image {
-            data: fixed,
-            ..inv_filter
-        };
-
+        let fixed_image = inv_filter.normalise(255.0);
         fixed_image.save(Path::new("inv_filter.png"));
     }
 
-    // TODO: Attempt deconvolving using a simple image-space kernel.
+    // I've observed that the largest weights are towards the centre of
+    // the convolution filter (see test_generate_decon_filter), so this
+    // test attempts to perform a deconvolution with just a small kernel,
+    // and see how well it performs.
     #[test]
     fn test_decon_kernel() {
-        // First, create the convoluted image to deconvolve.
+        // 1. Create the convoluted image to deconvolve.
 
         // Choose numbers different from the image dimensions, to
         // avoid missing bugs.
@@ -352,58 +361,33 @@ mod tests {
         let convolved =
             crate::convolution_solver::reconstruct(&scan, width, height);
 
-        // Then generate the image-space kernel.
+        // 2. Generate the image-space deconvolution kernel.
+
+        // Make it odd in size, so that the filter is centred in the
+        // middle of a pixel.
         let filter = build_convolution_filter(width | 1, height | 1, 0.0);
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-5);
         let inv_filter = filter_fft.to_image();
 
+        // Cut out the core of the filter, to create a small kernel
+        // filter that contains the biggest coefficients.
         let (k_width, k_height) = (5, 5);
         let k_x_offset = (inv_filter.width - k_width + 1) / 2;
         let k_y_offset = (inv_filter.height - k_height + 1) / 2;
+        let kernel_img = inv_filter.trim(k_x_offset, k_y_offset,
+                                         k_width, k_height);
 
-        let mut kernel = Vec::new();
-        for y in 0..k_height {
-            for x in 0..k_width {
-                kernel.push(inv_filter[(x + k_x_offset, y + k_y_offset)]);
-            }
-        }
-
-        // Then apply the kernel.
-        let mut res = Vec::new();
-        for y in 0..(convolved.height - k_height + 1) {
-            for x in 0..(convolved.width - k_width + 1) {
-                let mut pixel = 0.0;
-                for y2 in 0..k_height {
-                    for x2 in 0..k_width {
-                        pixel += kernel[y2 * k_width + x2] *
-                                 convolved[(x + x2, y + y2)];
-                    }
-                }
-                res.push(pixel / (inv_filter.width * inv_filter.height) as f64);
-            }
-        }
-
-        let max = res.iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-
-        let min = res.iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-
-        let res2 = res
-            .iter()
-            .map(|x| (x - min) * 255.0 / (max - min))
-            .collect::<Vec<_>>();
+        // 3. Apply the kernel.
 
         // Image size is reduced by the size of the kernel, but this
         // is enough for a quick hack.
-        let fixed_image = Image {
-            width: convolved.width - k_width + 1,
-            height: convolved.height - k_height + 1,
-            data: res2,
-        };
+        let fixed_image = convolved
+            .naive_convolve(&kernel_img)
+            .normalise(255.0);
+
+        // TODO: Check the amount of error. Don't save the image in a
+        // test.
 
         fixed_image.save(Path::new("kernel.png"));
     }

@@ -45,8 +45,13 @@ impl Image {
     }
 
     pub fn save(&self, path: &Path) {
-        let data_as_u8: Vec<u8> = self.data.iter().map(|x| x.max(0.0).min(255.0) as u8).collect::<Vec<_>>();
-        let img = GrayImage::from_vec(self.width as u32, self.height as u32, data_as_u8).unwrap();
+        let data_as_u8: Vec<u8> = self.data
+            .iter()
+            .map(|p| p.max(0.0).min(255.0) as u8)
+            .collect::<Vec<_>>();
+        let img = GrayImage::from_vec(
+            self.width as u32,
+            self.height as u32, data_as_u8).unwrap();
         img.save(path).unwrap();
     }
 
@@ -79,7 +84,7 @@ impl Image {
         }
     }
 
-    // The way convolution works means the deconvolved image is shifted by
+    // The way FFT convolution works means the deconvolved image is shifted by
     // an amount equivalent to the coordinates of the centre of the filter.
     // "shift" can undo this.
     pub fn shift(&self, x_shift: usize, y_shift: usize) -> Image {
@@ -101,13 +106,109 @@ impl Image {
         }
     }
 
-    // Normalise so that x is transformed to 1.0.
-    pub fn normalise(&self, a: f64) -> Image {
-        let data = self.data.iter().map(|b| b / a).collect::<Vec<_>>();
+    // Trim an image down to a sub-image, size (w, h), starting at
+    // (x_off, y_off) in the original image.
+    pub fn trim(&self, x_off: usize, y_off: usize, w: usize, h: usize) -> Image {
+        assert!(x_off + w <= self.width);
+        assert!(y_off + h <= self.height);
+
+        let mut data = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                data.push(self[(x + x_off, y + y_off)]);
+            }
+        }
+
+        Image {
+            width: w,
+            height: h,
+            data,
+        }
+    }
+
+    // Perform a naive convolution by applying a filter on a per-pixel
+    // basis, no FFT. Ok for small filter kernels. Technically there's
+    // supposed to be some mirroring going on in a convolution, but
+    // our filters are symmetric so it makes no difference here.
+    // Rather than doing anything clever at the edges, we just produce
+    // a smaller output image than the input.
+    pub fn naive_convolve(&self, filter: &Image) -> Image {
+        let mut data = Vec::new();
+        for y in 0..(self.height - filter.height + 1) {
+            for x in 0..(self.width - filter.width + 1) {
+                let mut pixel = 0.0;
+                for y2 in 0..filter.height {
+                    for x2 in 0..filter.width {
+                        pixel += filter[(x2, y2)] * self[(x + x2, y + y2)];
+                    }
+                }
+                data.push(pixel);
+            }
+        }
+
+        Image {
+            width: self.width - filter.width + 1,
+            height: self.height - filter.height + 1,
+            data,
+        }
+    }
+
+    // Find the difference between two images.
+    pub fn diff(&self, other: &Image) -> Image {
+        assert_eq!(self.width, other.width);
+        assert_eq!(self.height, other.height);
+
+        let diff = self.data
+            .iter().zip(other.data.iter())
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>();
+
+        Image {
+            width: self.width,
+            height: self.height,
+            data: diff
+        }
+    }
+
+    // Multiply all the points by the given value.
+    pub fn scale_values(&self, a: f64) -> Image {
+        let data = self.data.iter().map(|b| a * b).collect::<Vec<_>>();
         Image {
             width: self.width,
             height: self.height,
             data
+        }
+    }
+
+    // Add an offset to all values.
+    pub fn offset_values(&self, a: f64) -> Image {
+        let data = self.data.iter().map(|b| a + b).collect::<Vec<_>>();
+        Image {
+            width: self.width,
+            height: self.height,
+            data
+        }
+    }
+
+    // Normalise the data between 0 and the given value. Useful for
+    // making random test data into an image that can be viewed.
+    pub fn normalise(&self, scale: f64) -> Image {
+        let max = self.data.iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        let min = self.data.iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        let data = self.data
+            .iter()
+            .map(|p| (p - min) * scale / (max - min))
+            .collect::<Vec<_>>();
+
+        Image {
+            data,
+            ..*self
         }
     }
 }
