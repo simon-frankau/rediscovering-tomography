@@ -275,26 +275,9 @@ mod tests {
         let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
         let dst_img = norm_res.shift(width / 2, height / 2);
 
-        // TODO: For debugging...
-            dst_img.save(Path::new("full_cycle.png"));
-
-            dst_img
-                .diff(&src_img)
-                .offset_values(128.0)
-                .save(Path::new("full_cycle_diff.png"));
-        //
-
-        let total_error: f64 = src_img
-            .data
-            .iter()
-            .zip(dst_img.data.iter())
-            .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
-            .sum();
-
-        let average_error = total_error / (width * height) as f64;
-
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
+        let average_error = src_img.average_diff(&dst_img);
         assert!(average_error < 30.0);
     }
 

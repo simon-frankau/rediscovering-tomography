@@ -170,6 +170,19 @@ impl Image {
         }
     }
 
+    // Calculate the average per-pixel difference between two images
+    pub fn average_diff(&self, other: &Image) -> f64 {
+        assert_eq!(self.width, other.width);
+        assert_eq!(self.height, other.height);
+
+        let total_diff: f64 = self.data
+            .iter().zip(other.data.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+
+        total_diff / (self.width * self.height) as f64
+    }
+
     // Multiply all the points by the given value.
     pub fn scale_values(&self, a: f64) -> Image {
         let data = self.data.iter().map(|b| a * b).collect::<Vec<_>>();

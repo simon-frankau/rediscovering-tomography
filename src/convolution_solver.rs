@@ -314,7 +314,7 @@ mod tests {
 
         // Generate a convolution filter, no overscan. Integral up to
         // radius 1.0 is 1.0
-        let generated = build_convolution_filter(width, height, 0.0).data;
+        let generated = build_convolution_filter(width, height, 0.0);
 
         // Generate an image with a circle at the centre. We will later
         // scale it down to a circle one pixel in diameter, to be close
@@ -363,12 +363,8 @@ mod tests {
         let normalised = downscaled.scale_values(scale_factor);
 
         // Calculate the total error, integrated over the full image.
-        assert_eq!(generated.len(), normalised.data.len());
-        let error: f64 = generated
-            .iter()
-            .zip(normalised.data.iter())
-            .map(|(a, b)| (a - b).abs())
-            .sum();
+        let average_error = generated.average_diff(&normalised);
+        let total_error = average_error * (generated.width * generated.height) as f64;
 
         // Given the integral within unit radius is 1, and the
         // integral over the whole square is a bit more, this is not
@@ -377,6 +373,6 @@ mod tests {
         // numerical methods that I'm doing here, having an error
         // around 1% seems good enough to me! I think the algorithms
         // do pretty much match.
-        assert!(error < 0.016);
+        assert!(total_error < 0.016);
     }
 }

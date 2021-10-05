@@ -140,15 +140,7 @@ fn calculate_error(base_image: &Image, new_image: &Image) {
         return;
     }
 
-    let total_error: f64 = base_image
-        .data
-        .iter()
-        .zip(new_image.data.iter())
-        .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
-        .sum();
-
-    let average_error = total_error / (base_image.width * base_image.height) as f64;
-
+    let average_error = base_image.average_diff(&new_image);
     println!("Average per-pixel error: {}", average_error);
 }
 

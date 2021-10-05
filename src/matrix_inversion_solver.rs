@@ -132,16 +132,8 @@ mod tests {
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
-        let total_error: f64 = src_img
-            .data
-            .iter()
-            .zip(dst_img.data.iter())
-            .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
-            .sum();
-
-        let average_error = total_error / (dst_img.width * dst_img.height) as f64;
-
         // Less than 1/2560 average error!
+        let average_error = src_img.average_diff(&dst_img);
         assert!(average_error < 0.1);
     }
 
@@ -165,15 +157,7 @@ mod tests {
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
-        let total_error: f64 = src_img
-            .data
-            .iter()
-            .zip(dst_img.data.iter())
-            .map(|(&p1, &p2)| (p1 as f64 - p2 as f64).abs())
-            .sum();
-
-        let average_error = total_error / (dst_img.width * dst_img.height) as f64;
-
+        let average_error = src_img.average_diff(&dst_img);
         assert!(average_error < 0.5);
     }
 }
