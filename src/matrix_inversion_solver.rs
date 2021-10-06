@@ -132,9 +132,8 @@ mod tests {
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
-        // TODO: Tiny error. Very nice. But why did it decrease from earlier?
+        // Tiny error! Very nice.
         let average_error = src_img.average_diff(&dst_img);
-        eprintln!("{}", average_error);
         assert!(average_error < 1.0e-7);
     }
 
@@ -158,9 +157,8 @@ mod tests {
         let scan = scan(&src_img, angles, rays);
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
-        // TODO: Wow, the reconstruction here seems extremely precise?!
+        //  Wow, the reconstruction here seems extremely precise!
         let average_error = src_img.average_diff(&dst_img);
         assert!(average_error < 1.0e-10);
-        println!("{}", average_error);
     }
 }

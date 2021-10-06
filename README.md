@@ -230,6 +230,13 @@ matrix approach has shrunk dramatically since I first wrote the code,
 and don't know why. Something for investigation! All the numbers in
 the error sheet are now wrong.
 
+And... it turns out to be the discretisation to u8 upon
+reconstruction. Wihout that, the error goes way down in the case where
+it's basically converged.
+
+TODO: Consider regenerating the error data spreadsheet with this
+source of error removed, in order to better see the convergence.
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?
