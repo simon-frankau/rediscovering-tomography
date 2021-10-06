@@ -126,6 +126,28 @@ impl Image {
         }
     }
 
+    // Expand an image by adding a border of zeros, placing the
+    // original image at (x_off, y_off), and resizing the image to
+    // (w, h).
+    pub fn expand(&self, x_off: usize, y_off: usize, w: usize, h: usize) -> Image {
+        assert!(x_off + self.width <= w);
+        assert!(y_off + self.height <= h);
+
+        let mut img = Image {
+            width: w,
+            height: h,
+            data: vec![0.0; w * h],
+        };
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                img[(x + x_off, y + y_off)] = self[(x, y)];
+            }
+        }
+
+        img
+    }
+
     // Perform a naive convolution by applying a filter on a per-pixel
     // basis, no FFT. Ok for small filter kernels. Technically there's
     // supposed to be some mirroring going on in a convolution, but

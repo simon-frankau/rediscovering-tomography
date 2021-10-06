@@ -373,6 +373,6 @@ mod tests {
         // numerical methods that I'm doing here, having an error
         // around 1% seems good enough to me! I think the algorithms
         // do pretty much match.
-        assert!(total_error < 0.016);
+        assert!(0.012 < total_error && total_error < 0.016);
     }
 }

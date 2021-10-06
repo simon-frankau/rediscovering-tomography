@@ -223,6 +223,13 @@ a lot of them, so they do meaningfully contribute. I will now try
 going back to an FFT/large-size convolution filter approach, and see
 if this works better...
 
+# And again...
+
+While refactoring, I've noticed that the reconstruction error of the
+matrix approach has shrunk dramatically since I first wrote the code,
+and don't know why. Something for investigation! All the numbers in
+the error sheet are now wrong.
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?

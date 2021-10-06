@@ -278,7 +278,7 @@ mod tests {
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
         let average_error = src_img.average_diff(&dst_img);
-        assert!(average_error < 30.0);
+        assert!(20.0 < average_error && average_error < 30.0);
     }
 
     // Another hack, generating the deconvolution filter and
@@ -310,12 +310,15 @@ mod tests {
 
         // Print out highest weights (normalised), and (x, y) offset
         // from the filter centre.
+        //
+        // Centre is off-by-one from where you might expect -
+        // see comment on test_decon_kernel
         let centre_x = inv_filter.width as isize / 2 + 1;
         let centre_y = inv_filter.height as isize / 2 + 1;
         let norm = 1.0 / (inv_filter.width * inv_filter.height) as f64;
         for (y, x, v) in ext_data.iter().rev().take(100).collect::<Vec<_>>() {
-            let x_dist = *x as isize - centre_x.abs();
-            let y_dist = *y as isize - centre_y.abs();
+            let x_dist = (*x as isize - centre_x).abs();
+            let y_dist = (*y as isize - centre_y).abs();
             // Report Manhattan distance from centre of filter.
             println!("{} {} {} {}", y, x, v * norm, x_dist + y_dist);
         }
@@ -355,23 +358,63 @@ mod tests {
 
         // Cut out the core of the filter, to create a small kernel
         // filter that contains the biggest coefficients.
-        let (k_width, k_height) = (5, 5);
+        //
+
+        // The extra "+ 1" is because the centre of the inverse filter
+        // is moved over by 1 pixel. It's not entirely clear to me
+        // exactly why this is, but I suspect it's because the sample
+        // points are at the start of the discretisation intervals, and
+        // so when things are flipped in the "time" domain as part of it
+        // being a convolution, the points align with the end of the
+        // discretisation intervals, pushing everything along by 1 pixel.
+        // This is horrific hand-waving around maths I don't fully get, but
+        // suffice to say the shift is necessary.
+        let (k_width, k_height) = (9, 9);
         let k_x_offset = (inv_filter.width - k_width + 1) / 2;
         let k_y_offset = (inv_filter.height - k_height + 1) / 2;
-        let kernel_img = inv_filter.trim(k_x_offset, k_y_offset,
-                                         k_width, k_height);
+        let mut kernel_img = inv_filter.trim(k_x_offset + 1, k_y_offset + 1,
+                                             k_width, k_height);
 
-        // 3. Apply the kernel.
-
-        // Image size is reduced by the size of the kernel, but this
-        // is enough for a quick hack.
-        let fixed_image = convolved
+        // To get the appropriate weighting, we need to find what
+        // applying this new deconvolution filter to the original
+        // convolution filter gives - we need to normalise this
+        // to 1.0 to make it work.
+        let weight = filter
+            .trim(k_x_offset, k_y_offset, k_width, k_height)
             .naive_convolve(&kernel_img)
-            .normalise(255.0);
+            [(0,0)];
+        kernel_img = kernel_img.scale_values(1.0 / weight);
 
-        // TODO: Check the amount of error. Don't save the image in a
-        // test.
+        // 3. Apply the kernel to get a reconstruction.
 
-        fixed_image.save(Path::new("kernel.png"));
+        // Expand the image so that it's shrunk back to the original
+        // size by convolution.
+        let res = convolved
+            .expand(k_width / 2, k_height / 2,
+                convolved.width + k_width - 1,
+                convolved.height + k_height - 1)
+            .naive_convolve(&kernel_img);
+
+
+        // 4. Quantify the error in this reconstruction.
+
+        // For reasons I currently don't understand, probably due to
+        // the discontinuity across the edge of the image into the
+        // expanded part crossing over the part of the kernel with
+        // highest weights, we get a nasty high-value band around the
+        // edge of the image.
+
+        // TODO: Find a way of eliminating this?
+        let fudged_res = res
+            .trim(1, 1, res.width - 2, res.height - 2)
+            .expand(1, 1, res.width, res.height);
+
+        let average_diff = fudged_res.average_diff(&src_img);
+
+        // The average per-pixel difference is quite high, a lot of
+        // which comes from the black parts coming out dark grey
+        // because the small kernel filter doesn't remove the
+        // contribution from far-away bright areas.
+        assert!(50.0 < average_diff && average_diff < 60.0);
     }
 }
