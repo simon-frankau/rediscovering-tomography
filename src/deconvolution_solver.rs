@@ -278,6 +278,10 @@ mod tests {
 
         // TODO: This error is pretty huge, but small enough to mean
         // the image is roughly right.
+        //
+        // Note the error is smaller than in
+        // convolution_solver::test::test_reconstruct - we're doing
+        // something right!
         let average_error = src_img.average_diff(&dst_img);
         assert!(20.0 < average_error && average_error < 30.0);
     }
@@ -344,6 +348,10 @@ mod tests {
     // and see how well it performs.
     #[test]
     fn test_decon_kernel() {
+        // Size of the filter kernel we will construct.
+        // Use odd values to have a central point.
+        let (k_width, k_height) = (9, 9);
+
         // 1. Create the convoluted image to deconvolve.
 
         // Choose numbers different from the image dimensions, to
@@ -355,8 +363,11 @@ mod tests {
 
         let (width, height) = (src_img.width, src_img.height);
 
+        // Generate a convolved image with overscan. The size of
+        // the image will be reduced when we perform the convolution.
         let convolved =
-            crate::convolution_solver::reconstruct(&scan, width, height);
+            crate::convolution_solver::reconstruct_overscan(
+                &scan, width, height, k_width / 2, k_height / 2);
 
         // 2. Generate the image-space deconvolution kernel.
 
@@ -370,7 +381,6 @@ mod tests {
         // Cut out the core of the filter, to create a small kernel
         // filter that contains the biggest coefficients.
         //
-
         // The extra "+ 1" is because the centre of the inverse filter
         // is moved over by 1 pixel. It's not entirely clear to me
         // exactly why this is, but I suspect it's because the sample
@@ -380,7 +390,6 @@ mod tests {
         // discretisation intervals, pushing everything along by 1 pixel.
         // This is horrific hand-waving around maths I don't fully get, but
         // suffice to say the shift is necessary.
-        let (k_width, k_height) = (9, 9);
         let k_x_offset = (inv_filter.width - k_width + 1) / 2;
         let k_y_offset = (inv_filter.height - k_height + 1) / 2;
         let mut kernel_img = inv_filter.trim(k_x_offset + 1, k_y_offset + 1,
@@ -398,29 +407,13 @@ mod tests {
 
         // 3. Apply the kernel to get a reconstruction.
 
-        // Expand the image so that it's shrunk back to the original
-        // size by convolution.
-        let res = convolved
-            .expand(k_width / 2, k_height / 2,
-                convolved.width + k_width - 1,
-                convolved.height + k_height - 1)
-            .naive_convolve(&kernel_img);
-
+        // The convolution shrinks the overscanned image back to its
+        // original size.
+        let res = convolved.naive_convolve(&kernel_img);
 
         // 4. Quantify the error in this reconstruction.
 
-        // For reasons I currently don't understand, probably due to
-        // the discontinuity across the edge of the image into the
-        // expanded part crossing over the part of the kernel with
-        // highest weights, we get a nasty high-value band around the
-        // edge of the image.
-
-        // TODO: Find a way of eliminating this?
-        let fudged_res = res
-            .trim(1, 1, res.width - 2, res.height - 2)
-            .expand(1, 1, res.width, res.height);
-
-        let average_diff = fudged_res.average_diff(&src_img);
+        let average_diff = res.average_diff(&src_img);
 
         // The average per-pixel difference is quite high, a lot of
         // which comes from the black parts coming out dark grey

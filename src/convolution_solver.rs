@@ -10,6 +10,8 @@
 // this image.
 //
 
+use std::path::Path;
+
 use crate::tomo_image::Image;
 use crate::tomo_scan::{Scan, scan};
 
@@ -61,30 +63,56 @@ fn circular_integral(scan: &Scan, x: f64, y: f64) -> f64 {
 }
 
 // Generate the circular integrals of all points in a grid from a
-// Scan. The result is a convolved image.
-//
-// Not a real attempt at reconstruction, we just do the
-// convolution-generation step and return it without attempting to
-// deconvolve. It does give a nice blurry version of the original!
-pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
+// Scan. The result is a convolved image. The x_overscan and y_overscan
+// are the number of pixels added onto the left and right, and top and
+// bottom margins respectively, since the convoluted image is still
+// non-zero outside the original image, and this can be used in
+// reconstruction. Image::trim can be used to trim it back to a
+// width x height image at the right scale.
+pub fn reconstruct_overscan(
+    scan: &Scan,
+    width: usize,
+    height: usize,
+    x_overscan: usize,
+    y_overscan: usize
+) -> Image {
+    // TODO: See if we can remove the C&P code around iterating
+    // across the pixels of an overscanned image.
+
+    // Overscan is applied on both edges
+    let w_full = width + 2 * x_overscan;
+    let h_full = height + 2 * y_overscan;
+
+    let y_step = 2.0 / height as f64;
+    let x_step = 2.0 / width as f64;
+
+    // Sample at the centre of the pixels - add 0.5.
+    let y_offset = (h_full as f64 - 1.0)/ 2.0;
+    let x_offset = (w_full as f64 - 1.0)/ 2.0;
+
     let mut data = Vec::new();
 
-    let y_scale = 2.0 / height as f64;
-    let y_offset = -1.0;
-    // Sample at the centre of the pixels - add 0.5
-    for y in (0..height).map(|idx| (idx as f64 + 0.5) * y_scale + y_offset) {
-        let x_scale = 2.0 / width as f64;
-        let x_offset = -1.0;
-        for x in (0..width).map(|idx| (idx as f64 + 0.5) * x_scale + x_offset) {
+    for y in (0..h_full).map(|idx| (idx as f64 - y_offset) * y_step) {
+        for x in (0..w_full).map(|idx| (idx as f64 - x_offset) * x_step) {
             data.push(circular_integral(scan, x, y));
         }
     }
 
     Image {
-        width,
-        height,
+        width: w_full,
+        height: h_full,
         data,
     }
+}
+
+// Generate the circular integrals of all points in a grid from a
+// Scan. The result is a convolved image. No overscan.
+//
+// Not a real attempt at reconstruction, we just do the
+// convolution-generation step and return it without attempting to
+// deconvolve. It does give a nice blurry version of the original!
+pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
+    reconstruct_overscan(scan, width, height, 0, 0)
 }
 
 // Build an image that represents the convolution filter applied by
@@ -148,6 +176,51 @@ pub fn build_convolution_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reconstruct() {
+        // Choose numbers different from the image dimensions, to
+        // avoid missing bugs.
+        let (rays, angles) = (35, 40);
+
+        let src_img = Image::load(Path::new("images/test.png"));
+        let scan = scan(&src_img, angles, rays);
+
+        let (width, height) = (src_img.width, src_img.height);
+
+        let dst_img = reconstruct(&scan, width, height);
+
+        // Fairly chunky error, but this is to be expected when we
+        // don't have a real reconstruction, but a blurry-filtered
+        // version of the original.
+        let average_error = src_img.average_diff(&dst_img);
+        assert!(30.0 < average_error && average_error < 40.0);
+    }
+
+    #[test]
+    fn test_reconstruct_overscan() {
+        // Choose numbers different from the image dimensions, to
+        // avoid missing bugs.
+        let (rays, angles) = (35, 40);
+
+        let src_img = Image::load(Path::new("images/test.png"));
+        let scan = scan(&src_img, angles, rays);
+
+        let (width, height) = (src_img.width, src_img.height);
+
+        let dst_img = reconstruct(&scan, width, height);
+
+        let (x_over, y_over) = (5, 7);
+        let dst_img_overscan =
+            reconstruct_overscan(&scan, width, height, x_over, y_over);
+
+        let dst_img_trimmed =
+            dst_img_overscan.trim(x_over, y_over, width, height);
+
+        for (p1, p2) in dst_img.data.iter().zip(dst_img_trimmed.data.iter()) {
+            assert_eq!(p1, p2);
+        }
+    }
 
     // Check that the integral over the convolution filter is what we expect
     // (integral = r).
