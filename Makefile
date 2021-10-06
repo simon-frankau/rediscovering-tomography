@@ -11,7 +11,7 @@ results:
 demo: target/release/rediscovering-tomography results
 	target/release/rediscovering-tomography --input-image=images/test.png \
 	    --rays=35 --angles=40 --output-scan=results/test_scan.png \
-	    --output-image=results/test.png
+	    --output-image=results/test.png --diff-image=results/test-diff.png
 
 # Try a range of angles/rays around the resolution of the image
 # (32x32), and see what the associated per-pixel error generated is.

@@ -43,7 +43,7 @@ struct Opts {
     /// File to write the intermediate scan to.
     #[clap(long)]
     output_scan: Option<String>,
-    /// File to write the reconstructed image to
+    /// File to write the reconstructed image to.
     #[clap(long)]
     output_image: Option<String>,
     /// Width of reconstructed image
@@ -52,6 +52,9 @@ struct Opts {
     /// Height of reconstructed image
     #[clap(long)]
     height: Option<usize>,
+    /// Where to write the diff between input and reconstructed image to.
+    #[clap(long)]
+    diff_image: Option<String>,
     #[clap(arg_enum, long, default_value = "matrix-inversion")]
     algorithm: Algorithm,
 }
@@ -86,6 +89,10 @@ fn generate_scan(opts: &Opts) -> (Option<Image>, Scan) {
         assert!(
             opts.rays.is_none(),
             "--rays cannot be used with --input-scan"
+        );
+        assert!(
+            opts.diff_image.is_none(),
+            "--diff-image cannot be used with --input-scan"
         );
 
         (None, Scan::load(Path::new(&name)))
@@ -153,8 +160,8 @@ fn main() {
     let reconstruction = generate_reconstruction(&opts, &input_image, &scan);
     eprintln!("done!");
 
-    if let Some(image) = input_image {
-        calculate_error(&image, &reconstruction);
+    if let Some(ref image) = input_image {
+        calculate_error(image, &reconstruction);
     } else {
         eprintln!("No --input-image supplied, not calculating transformation error vs. base image");
     }
@@ -165,5 +172,17 @@ fn main() {
 
     if let Some(name) = opts.output_image {
         reconstruction.save(Path::new(&name));
+    }
+
+    if let Some(name) = opts.diff_image {
+        // Technically, the potential range of diff-then-offset_values
+        // is -127..383, but almost all diffs will be in 0..255, and
+        // "save" will apply a u8 cap/floor anyway, so we don't bother
+        // to scale.
+        input_image
+            .unwrap()
+            .diff(&reconstruction)
+            .offset_values(128.0)
+            .save(Path::new(&name));
     }
 }
