@@ -5,6 +5,7 @@
 // deconvolves it to obtain a better approximation of the original.
 //
 
+use itertools::iproduct;
 use rustfft::{num_complex::Complex64, FftDirection, FftPlanner};
 use std::ops::{Index, IndexMut};
 use std::path::Path;
@@ -281,50 +282,60 @@ mod tests {
         assert!(20.0 < average_error && average_error < 30.0);
     }
 
-    // Another hack, generating the deconvolution filter and
-    // looking to see how wide the main contributing part of this kernel
-    // is.
-    //
-    // TODO: Convert into a test, showing that the biggest weights
-    // are in the centre, and the relative sum of the weights.
+    // This test documents how the majority of the weight of the
+    // deconvolution filter is right in the centre.
     #[test]
     fn test_generate_decon_filter() {
+        // 1. First we build a reasonably large deconvolution filter...
         let (width, height) = (65, 65);
-
         let filter = build_convolution_filter(width, height, 5.0);
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-5);
         let inv_filter = filter_fft.to_image();
 
-        let mut ext_data = inv_filter.data.iter().enumerate()
-            .map(|(idx, p)| (idx / inv_filter.width,
-                             idx % inv_filter.width,
-                             *p))
+        // 2. Then we show that the biggest weights are at the centre.
+
+        // Get a sorted list of all the weights...
+        let mut sorted_weights = inv_filter.data
+            .iter()
+            .map(|p| p.abs())
             .collect::<Vec<_>>();
+        sorted_weights.sort_by(|a, b| b.partial_cmp(&a).unwrap());
 
-        ext_data
-            .sort_by(|(_, _, a), (_, _, b)| a
-                .abs()
-                .partial_cmp(&b.abs())
-            .unwrap());
-
-        // Print out highest weights (normalised), and (x, y) offset
-        // from the filter centre.
-        //
+        // And then a sorted list of the weights in the centre.
+        let centre_radius = 6;
         // Centre is off-by-one from where you might expect -
         // see comment on test_decon_kernel
         let centre_x = inv_filter.width as isize / 2 + 1;
         let centre_y = inv_filter.height as isize / 2 + 1;
-        let norm = 1.0 / (inv_filter.width * inv_filter.height) as f64;
-        for (y, x, v) in ext_data.iter().rev().take(100).collect::<Vec<_>>() {
-            let x_dist = (*x as isize - centre_x).abs();
-            let y_dist = (*y as isize - centre_y).abs();
-            // Report Manhattan distance from centre of filter.
-            println!("{} {} {} {}", y, x, v * norm, x_dist + y_dist);
-        }
+        let mut centre_sorted_weights =
+            iproduct!(0..(inv_filter.width), 0..(inv_filter.height))
+            .filter(|(x, y)| {
+                let dx = *x as isize - centre_x;
+                let dy = *y as isize - centre_y;
+                dx * dx + dy * dy < centre_radius * centre_radius
+             })
+            .map(|p| inv_filter[p].abs())
+            .collect::<Vec<_>>();
+        centre_sorted_weights.sort_by(|a, b| b.partial_cmp(&a).unwrap());
 
-        let fixed_image = inv_filter.normalise(255.0);
-        fixed_image.save(Path::new("inv_filter.png"));
+        // And show that the biggest weights in the centre are the
+        // biggest weights.
+        let last_centre_idx = centre_sorted_weights.len() - 1;
+        assert_eq!(sorted_weights[last_centre_idx],
+                   centre_sorted_weights[last_centre_idx]);
+
+        // 3. Show that the weights fall off quickly - the 21st element
+        // is a tiny fraction of the biggest weight.
+        let weight_ratio = sorted_weights[21] / sorted_weights[0];
+        assert!(0.001 < weight_ratio && weight_ratio < 0.002);
+
+        // 4. Show that the vast majority of the overall weight is
+        // in the centre.
+        let centre_weight = centre_sorted_weights.iter().sum::<f64>();
+        let total_weight = sorted_weights.iter().sum::<f64>();
+        let centre_fraction = centre_weight / total_weight;
+        assert!(0.97 < centre_fraction && centre_fraction < 0.98);
     }
 
     // I've observed that the largest weights are towards the centre of
