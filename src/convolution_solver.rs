@@ -242,46 +242,58 @@ mod tests {
     }
 
 
+    // Helper function, like build_image, except it passes over
+    // an existing image, calling a closure with coordinates and
+    // value at a point. Pass in the non-overscanned width and height.
+    fn scan_image<F: FnMut(f64, f64, f64)> (
+       image: &Image,
+       base_width: usize,
+       base_height: usize,
+       mut value_fn: F,
+    ) {
+        let y_step = 2.0 / base_width as f64;
+        let x_step = 2.0 / base_height as f64;
+
+        // Sample at the centre of the pixels - add 0.5.
+        let y_offset = (image.height as f64 - 1.0)/ 2.0;
+        let x_offset = (image.width as f64 - 1.0)/ 2.0;
+
+        for y_idx in 0..image.height {
+            let y = (y_idx as f64 - y_offset) * y_step;
+            for x_idx in 0..image.width {
+            let x = (x_idx as f64 - x_offset) * x_step;
+                value_fn(x, y, image[(x_idx, y_idx)]);
+            }
+        }
+    }
+
     // Check that the integral over the convolution filter is what we expect
     // (integral = r).
     #[test]
     fn test_convolution_integral_even() {
         let (base_w, base_h) = (128, 128);
         let filter = build_convolution_filter_overscan(base_w, base_h);
-        // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / base_w as f64;
-        let y_step = 2.0 / base_h as f64;
-
-        // Sample the centre of pixels - offset by 0.5.
-        let x_offset = (filter.width as f64 - 1.0) / 2.0;
-        let y_offset = (filter.height as f64 - 1.0) / 2.0;
 
         let mut integral_120 = 0.0;
         let mut integral_100 = 0.0;
         let mut integral_070 = 0.0;
         let mut integral_050 = 0.0;
 
-        for y_idx in 0..filter.height {
-            let y = (y_idx as f64 - y_offset) * y_step;
-            for x_idx in 0..filter.width {
-                let x = (x_idx as f64 - x_offset) * x_step;
-
-                let r = (x * x + y * y).sqrt();
-                let weight = filter[(x_idx, y_idx)];
-                if r <= 1.2 {
-                    integral_120 += weight;
-                }
-                if r <= 1.0 {
-                    integral_100 += weight;
-                }
-                if r <= 0.7 {
-                    integral_070 += weight;
-                }
-                if r <= 0.5 {
-                    integral_050 += weight;
-                }
+        scan_image(&filter, base_w, base_h, |x, y, p| {
+            let r = (x * x + y * y).sqrt();
+            if r <= 1.2 {
+                integral_120 += p;
             }
-        }
+            if r <= 1.0 {
+                integral_100 += p;
+            }
+            if r <= 0.7 {
+                integral_070 += p;
+            }
+            if r <= 0.5 {
+                integral_050 += p;
+            }
+        });
 
         assert!((integral_120 - 1.2).abs() < 0.005);
         assert!((integral_100 - 1.0).abs() < 0.005);
@@ -296,40 +308,26 @@ mod tests {
         let (base_w, base_h) = (129, 129);
         let filter = build_convolution_filter_overscan(base_w, base_h);
 
-        // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / base_w as f64;
-        let y_step = 2.0 / base_h as f64;
-
-        // Sample the centre of pixels - offset by 0.5.
-        let x_offset = (filter.width as f64 - 1.0) / 2.0;
-        let y_offset = (filter.height as f64 - 1.0) / 2.0;
-
         let mut integral_120 = 0.0;
         let mut integral_100 = 0.0;
         let mut integral_070 = 0.0;
         let mut integral_050 = 0.0;
 
-        for y_idx in 0..filter.height {
-            let y = (y_idx as f64 - y_offset) * y_step;
-            for x_idx in 0..filter.width {
-                let x = (x_idx as f64 - x_offset) * x_step;
-
-                let r = (x * x + y * y).sqrt();
-                let weight = filter[(x_idx, y_idx)];
-                if r <= 1.2 {
-                    integral_120 += weight;
-                }
-                if r <= 1.0 {
-                    integral_100 += weight;
-                }
-                if r <= 0.7 {
-                    integral_070 += weight;
-                }
-                if r <= 0.5 {
-                    integral_050 += weight;
-                }
+        scan_image(&filter, base_w, base_h, |x, y, p| {
+            let r = (x * x + y * y).sqrt();
+            if r <= 1.2 {
+                integral_120 += p;
             }
-        }
+            if r <= 1.0 {
+                integral_100 += p;
+            }
+            if r <= 0.7 {
+                integral_070 += p;
+            }
+            if r <= 0.5 {
+                integral_050 += p;
+            }
+        });
 
         assert!((integral_120 - 1.2).abs() < 0.005);
         assert!((integral_100 - 1.0).abs() < 0.005);
