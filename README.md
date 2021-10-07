@@ -237,6 +237,16 @@ it's basically converged.
 TODO: Consider regenerating the error data spreadsheet with this
 source of error removed, in order to better see the convergence.
 
+# More work...
+
+Important factors in accuracy:
+
+ * Getting the filter aligned on the centre of a pixel
+ * Getting the input and output correctly aligned (previous point is basically
+   sub-pixel alignment)
+ * And hence, making sure your code works for odd- and even-sized images.
+
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?

@@ -446,7 +446,13 @@ mod tests {
             crate::convolution_solver::reconstruct_overscan(&scan, width, height, width * overscan_factor, height * overscan_factor);
 
         // 2. Build the deconvolution filter in frequency space.
-        let filter = build_convolution_filter(width, height, width * overscan_factor, height * overscan_factor);
+
+        // Make the filter centred at the centre of a pixel, by being
+        // odd-sized.
+        let filter = build_convolution_filter(width | 1, height | 1,
+            width * overscan_factor, height * overscan_factor)
+            .trim(0, 0, width * (2 * overscan_factor + 1),
+                        height * (2 * overscan_factor + 1));
 
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-2);
@@ -459,12 +465,15 @@ mod tests {
         let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
         // Shift image to centre, and trim around it.
         let dst_img = norm_res
-            .shift(norm_res.width / 2, norm_res.height / 2)
+            .shift((norm_res.width + 1) / 2, (norm_res.height + 1) / 2)
             .trim(width * overscan_factor, height * overscan_factor,
                   width, height);
 
-        // Mild improvement on fn test_basic_image_deconvolve.
+        // Pretty decent improvement on test_basic_image_deconvolve.
+        //
+        // Having a pixel-centred filter (rather than between-pixel-centred)
+        // filter reduces the error from around 38-39.
         let rms_error = src_img.rms_diff(&dst_img);
-        assert!(38.0 < rms_error && rms_error < 39.0);
+        assert!(17.0 < rms_error && rms_error < 18.0);
     }
 }
