@@ -179,6 +179,21 @@ pub fn build_convolution_filter(
 mod tests {
     use super::*;
 
+    // Find the baseline RMS error when the "reconstruction" is an
+    // empty image.
+    #[test]
+    fn test_null_reconstruction() {
+        let src_img = Image::load(Path::new("images/test.png"));
+        let dst_img = Image {
+            data: vec![0.0; src_img.data.len()],
+            ..src_img
+        };
+
+        let rms_error = src_img.rms_diff(&dst_img);
+        // We know the baseline "no image" error is around 71.6.
+        assert!(71.0 < rms_error && rms_error < 72.0);
+    }
+
     #[test]
     fn test_reconstruct() {
         // Choose numbers different from the image dimensions, to
@@ -194,7 +209,8 @@ mod tests {
 
         // Fairly chunky error, but this is to be expected when we
         // don't have a real reconstruction, but a blurry-filtered
-        // version of the original.
+        // version of the original. It's mildly better than
+        // the baseline blank image!
         let rms_error = src_img.rms_diff(&dst_img);
         assert!(59.0 < rms_error && rms_error < 61.0);
     }
@@ -240,7 +256,6 @@ mod tests {
 
         filter
     }
-
 
     // Helper function, like build_image, except it passes over
     // an existing image, calling a closure with coordinates and

@@ -423,4 +423,48 @@ mod tests {
         // contribution from far-away bright areas.
         assert!(60.0 < rms_diff && rms_diff < 65.0);
     }
+
+    // Exercise a deconvolution where we use an overscan to take account
+    // of the way the filter (and its inverse) is not limited to the size
+    // of the original image.
+    #[test]
+    fn test_image_deconvolve() {
+        let overscan_factor = 2;
+
+        // 1. Scan and generate the convolved image.
+
+        // Choose numbers different from the image dimensions, to
+        // avoid missing bugs.
+        let (rays, angles) = (35, 40);
+
+        let src_img = Image::load(Path::new("images/test.png"));
+        let scan = scan(&src_img, angles, rays);
+
+        let (width, height) = (src_img.width, src_img.height);
+
+        let convolved_img =
+            crate::convolution_solver::reconstruct_overscan(&scan, width, height, width * overscan_factor, height * overscan_factor);
+
+        // 2. Build the deconvolution filter in frequency space.
+        let filter = build_convolution_filter(width, height, width * overscan_factor, height * overscan_factor);
+
+        let mut filter_fft = FFTImage::from_image(&filter);
+        filter_fft.invert(1e-2);
+
+        // 3. Perform the deconvolution.
+        let mut fft = FFTImage::from_image(&convolved_img);
+        fft.convolve(&filter_fft);
+        let res = fft.to_image();
+
+        let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
+        // Shift image to centre, and trim around it.
+        let dst_img = norm_res
+            .shift(norm_res.width / 2, norm_res.height / 2)
+            .trim(width * overscan_factor, height * overscan_factor,
+                  width, height);
+
+        // Mild improvement on fn test_basic_image_deconvolve.
+        let rms_error = src_img.rms_diff(&dst_img);
+        assert!(38.0 < rms_error && rms_error < 39.0);
+    }
 }
