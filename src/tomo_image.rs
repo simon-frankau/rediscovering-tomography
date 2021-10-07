@@ -192,17 +192,17 @@ impl Image {
         }
     }
 
-    // Calculate the average per-pixel difference between two images
-    pub fn average_diff(&self, other: &Image) -> f64 {
+    // Calculate the RMS of per-pixel difference between two images
+    pub fn rms_diff(&self, other: &Image) -> f64 {
         assert_eq!(self.width, other.width);
         assert_eq!(self.height, other.height);
 
-        let total_diff: f64 = self.data
+        let sum_squares_diff: f64 = self.data
             .iter().zip(other.data.iter())
-            .map(|(a, b)| (a - b).abs())
+            .map(|(a, b)| (a - b) * (a - b))
             .sum();
 
-        total_diff / (self.width * self.height) as f64
+        (sum_squares_diff / (self.width * self.height) as f64).sqrt()
     }
 
     // Multiply all the points by the given value.

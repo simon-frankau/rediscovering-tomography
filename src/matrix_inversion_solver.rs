@@ -133,8 +133,9 @@ mod tests {
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
         // Tiny error! Very nice.
-        let average_error = src_img.average_diff(&dst_img);
-        assert!(average_error < 1.0e-7);
+        let rms_error = src_img.rms_diff(&dst_img);
+        println!("{}", rms_error);
+        assert!(rms_error < 1.0e-7);
     }
 
     #[test]
@@ -158,7 +159,7 @@ mod tests {
         let dst_img = reconstruct(&scan, src_img.width, src_img.height);
 
         //  Wow, the reconstruction here seems extremely precise!
-        let average_error = src_img.average_diff(&dst_img);
-        assert!(average_error < 1.0e-10);
+        let rms_error = src_img.rms_diff(&dst_img);
+        assert!(rms_error < 1.0e-10);
     }
 }

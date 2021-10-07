@@ -282,8 +282,8 @@ mod tests {
         // Note the error is smaller than in
         // convolution_solver::test::test_reconstruct - we're doing
         // something right!
-        let average_error = src_img.average_diff(&dst_img);
-        assert!(20.0 < average_error && average_error < 30.0);
+        let rms_error = src_img.rms_diff(&dst_img);
+        assert!(40.0 < rms_error && rms_error < 45.0);
     }
 
     // This test documents how the majority of the weight of the
@@ -415,12 +415,12 @@ mod tests {
 
         // 4. Quantify the error in this reconstruction.
 
-        let average_diff = res.average_diff(&src_img);
+        let rms_diff = res.rms_diff(&src_img);
 
-        // The average per-pixel difference is quite high, a lot of
+        // The RMS per-pixel difference is quite high, a lot of
         // which comes from the black parts coming out dark grey
         // because the small kernel filter doesn't remove the
         // contribution from far-away bright areas.
-        assert!(50.0 < average_diff && average_diff < 60.0);
+        assert!(60.0 < rms_diff && rms_diff < 65.0);
     }
 }

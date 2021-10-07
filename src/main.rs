@@ -147,8 +147,8 @@ fn calculate_error(base_image: &Image, new_image: &Image) {
         return;
     }
 
-    let average_error = base_image.average_diff(&new_image);
-    println!("Average per-pixel error: {}", average_error);
+    let rms_error = base_image.rms_diff(&new_image);
+    println!("RMS of per-pixel error: {}", rms_error);
 }
 
 fn main() {

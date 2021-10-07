@@ -195,8 +195,8 @@ mod tests {
         // Fairly chunky error, but this is to be expected when we
         // don't have a real reconstruction, but a blurry-filtered
         // version of the original.
-        let average_error = src_img.average_diff(&dst_img);
-        assert!(30.0 < average_error && average_error < 40.0);
+        let rms_error = src_img.rms_diff(&dst_img);
+        assert!(59.0 < rms_error && rms_error < 61.0);
     }
 
     #[test]
@@ -433,17 +433,15 @@ mod tests {
         let scale_factor = (4.0 * radius2) / circle_area;
         let normalised = downscaled.scale_values(scale_factor);
 
-        // Calculate the total error, integrated over the full image.
-        let average_error = generated.average_diff(&normalised);
-        let total_error = average_error * (generated.width * generated.height) as f64;
+        // Calculate the total error, and normalise over the full
+        // image, so that this would be the RMS per-pixel error
+        // if the average value was 1.0.
+        let rms_error = generated.rms_diff(&normalised);
+        let normalised_error = rms_error * (generated.width * generated.height) as f64;
 
-        // Given the integral within unit radius is 1, and the
-        // integral over the whole square is a bit more, this is not
-        // far off a 1% error. If oversample_factor is 9, the error
-        // reduces to around 0.01. Given the amount of half-assed
-        // numerical methods that I'm doing here, having an error
-        // around 1% seems good enough to me! I think the algorithms
-        // do pretty much match.
-        assert!(0.012 < total_error && total_error < 0.016);
+        // Average absolute difference is around 1%, using RMS makes
+        // it look a lot larger, but this still seems a good enough
+        // match.
+        assert!(0.10 < normalised_error && normalised_error < 0.12);
     }
 }
