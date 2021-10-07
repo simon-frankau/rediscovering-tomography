@@ -62,6 +62,42 @@ fn circular_integral(scan: &Scan, x: f64, y: f64) -> f64 {
     total / scan.angles as f64
 }
 
+// Helper function that, given a size and amount of overscan, and a
+// function that goes from -1..1 coordinates to value, will generate an
+// image.
+fn build_image<F: Fn(f64, f64) -> f64>(
+   width: usize,
+   height: usize,
+   width_overscan: usize,
+   height_overscan: usize,
+   value_fn: F,
+) -> Image {
+    // Overscan is applied on both edges
+    let w_full = width + 2 * width_overscan;
+    let h_full = height + 2 * height_overscan;
+
+    let y_step = 2.0 / height as f64;
+    let x_step = 2.0 / width as f64;
+
+    // Sample at the centre of the pixels - add 0.5.
+    let y_offset = (h_full as f64 - 1.0)/ 2.0;
+    let x_offset = (w_full as f64 - 1.0)/ 2.0;
+
+    let mut data = Vec::new();
+
+    for y in (0..h_full).map(|idx| (idx as f64 - y_offset) * y_step) {
+        for x in (0..w_full).map(|idx| (idx as f64 - x_offset) * x_step) {
+            data.push(value_fn(x, y));
+        }
+    }
+
+    Image {
+        width: w_full,
+        height: h_full,
+        data,
+    }
+}
+
 // Generate the circular integrals of all points in a grid from a
 // Scan. The result is a convolved image. The x_overscan and y_overscan
 // are the number of pixels added onto the left and right, and top and
@@ -76,33 +112,12 @@ pub fn reconstruct_overscan(
     x_overscan: usize,
     y_overscan: usize
 ) -> Image {
-    // TODO: See if we can remove the C&P code around iterating
-    // across the pixels of an overscanned image.
-
-    // Overscan is applied on both edges
-    let w_full = width + 2 * x_overscan;
-    let h_full = height + 2 * y_overscan;
-
-    let y_step = 2.0 / height as f64;
-    let x_step = 2.0 / width as f64;
-
-    // Sample at the centre of the pixels - add 0.5.
-    let y_offset = (h_full as f64 - 1.0)/ 2.0;
-    let x_offset = (w_full as f64 - 1.0)/ 2.0;
-
-    let mut data = Vec::new();
-
-    for y in (0..h_full).map(|idx| (idx as f64 - y_offset) * y_step) {
-        for x in (0..w_full).map(|idx| (idx as f64 - x_offset) * x_step) {
-            data.push(circular_integral(scan, x, y));
-        }
-    }
-
-    Image {
-        width: w_full,
-        height: h_full,
-        data,
-    }
+    build_image(
+        width,
+        height,
+        x_overscan,
+        y_overscan,
+        |x, y| circular_integral(scan, x, y))
 }
 
 // Generate the circular integrals of all points in a grid from a
@@ -134,43 +149,30 @@ pub fn build_convolution_filter(
     x_overscan: usize,
     y_overscan: usize
 ) -> Image {
-    let w_full = width + 2 * x_overscan;
-    let h_full = height + 2 * y_overscan;
-
-    let x_step = 2.0 / width as f64;
-    let y_step = 2.0 / height as f64;
-
-    // Sample the centre of pixels - offset by 0.5.
-    let x_offset = (w_full as f64 - 1.0) / 2.0;
-    let y_offset = (h_full as f64 - 1.0) / 2.0;
-
-    let mut res = Vec::new();
-
     // "Fudge" boosts the radius by a tiny amount to avoid a
     // singularity at the origin, since we're really trying to
     // sample areas rather than points.
     //
     // We make the radius bump half the "radius" of a pixel.
+    let y_step = 2.0 / height as f64;
+    let x_step = 2.0 / width as f64;
     let fudge = (x_step * x_step + y_step * y_step).sqrt() / 4.0;
 
-    for y in (0..h_full).map(|y| (y as f64 - y_offset) * y_step) {
-        for x in (0..w_full).map(|x| (x as f64 - x_offset) * x_step) {
+    build_image(
+        width,
+        height,
+        x_overscan,
+        y_overscan,
+        | x, y | {
             let r = (x * x + y * y).sqrt().max(fudge);
             let r_frac = r * 2.0 * std::f64::consts::PI;
-            let weight = (x_step * y_step) / r_frac;
-            res.push(weight);
-        }
-    }
+            (x_step * y_step) / r_frac
+        })
 
-    // We could normalise, so that the integral inside the unit disc
-    // is precisely 1.0, but we're within 0.5% with a decent-sized grid,
-    // which is good enough for what we're doing here.
-
-    Image {
-        width: w_full,
-        height: h_full,
-        data: res
-    }
+    // We could normalise the image, so that the integral inside the
+    // unit disc is precisely 1.0, but we're within 0.5% with a
+    // decent-sized grid, which is good enough for what we're doing
+    // here.
 }
 
 #[cfg(test)]
@@ -399,32 +401,23 @@ mod tests {
         // Generate an image with a circle at the centre. We will later
         // scale it down to a circle one pixel in diameter, to be close
         // to what the convolution filter is generating.
-        let (o_width, o_height) = (width * oversample_factor, height * oversample_factor);
+        let o_width = width * oversample_factor;
+        let o_height =  height * oversample_factor;
+        let radius = oversample_factor as f64 / 2.0;
+        let radius2 = radius * radius;
 
-        let mut circle_area = 0.0;
+        let src_img = build_image(o_width, o_height, 0, 0, | x, y | {
+            // Convert -1..1 coordinates to pixel coordinates.
+            let px = x * o_width as f64 / 2.0;
+            let py = y * o_height as f64 / 2.0;
 
-        let image = (0..o_width * o_height).map(|idx| {
-            let (x_idx, y_idx) = (idx % o_width, idx / o_width);
-            // Adjust to centre of pixels.
-            let x = x_idx as f64 + 0.5 - o_width as f64 / 2.0;
-            let y = y_idx as f64 + 0.5 - o_height as f64 / 2.0;
+            // Calculate the square of distance from the centre in pixel units.
+            let r2 = px * px + py * py;
+            // Fill in if within the central circle.
+            if r2 <= radius2 { 1.0 } else { 0.0 }
+        });
 
-            // Set radius = oversample_factor / 2 pixels,
-            // diameter = oversample_factor.
-            let r2 = x * x + y * y;
-            if r2 <= oversample_factor as f64 * oversample_factor as f64 / 4.0 {
-                circle_area += 1.0;
-                1.0
-            } else {
-                0.0
-            }
-        }).collect::<Vec<_>>();
-
-        let src_img = Image {
-            width: o_width,
-            height: o_height,
-            data: image,
-        };
+        let circle_area = src_img.data.iter().sum::<f64>();
 
         // Make sure we don't lose precision in the scan.
         let rays = o_width * 2;
@@ -439,7 +432,7 @@ mod tests {
 
         // Then normalise to the same scale as the generated filter by
         // dividing through by circle_area / oversample_factor^2
-        let scale_factor = (oversample_factor as f64 * oversample_factor as f64) / circle_area;
+        let scale_factor = (4.0 * radius2) / circle_area;
         let normalised = downscaled.scale_values(scale_factor);
 
         // Calculate the total error, integrated over the full image.
