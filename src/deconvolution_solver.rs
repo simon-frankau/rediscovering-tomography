@@ -225,7 +225,7 @@ mod tests {
 
         // Generate the forward filter, and the inversion of the FFT
         // of the filter, to undo it.
-        let filter = build_convolution_filter(width, height, 0.0);
+        let filter = build_convolution_filter(width, height, 0, 0);
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-7);
 
@@ -263,7 +263,7 @@ mod tests {
             crate::convolution_solver::reconstruct(&scan, width, height);
 
         // 2. Build the deconvolution filter in frequency space.
-        let filter = build_convolution_filter(width, height, 0.0);
+        let filter = build_convolution_filter(width, height, 0, 0);
 
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-2);
@@ -292,7 +292,9 @@ mod tests {
     fn test_generate_decon_filter() {
         // 1. First we build a reasonably large deconvolution filter...
         let (width, height) = (65, 65);
-        let filter = build_convolution_filter(width, height, 5.0);
+        let overscan = 5;
+        let (w_over, h_over) = (overscan * width, overscan * height);
+        let filter = build_convolution_filter(width, height, w_over, h_over);
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-5);
         let inv_filter = filter_fft.to_image();
@@ -373,7 +375,7 @@ mod tests {
 
         // Make it odd in size, so that the filter is centred in the
         // middle of a pixel.
-        let filter = build_convolution_filter(width | 1, height | 1, 0.0);
+        let filter = build_convolution_filter(width | 1, height | 1, 0, 0);
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-5);
         let inv_filter = filter_fft.to_image();

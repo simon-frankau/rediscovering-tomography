@@ -121,21 +121,21 @@ pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
 // Not an actual Image as we want to stay in the f64 domain.
 //
 // Width and height are the width and height of the area representing
-// (-1..1, -1..1). "Overscan" is the fraction extra we slap on each
-// edge because the filter doesn't ever fully drop off to zero.
+// (-1..1, -1..1). Overscan is in pixels-per-side, like for
+// reconstruct_overscan. It's useful because the filter doesn't ever
+// drop off to zero, so our calculations may extend beyond the core
+// image.
 //
 // Weights are set such that integrating over a unit disc should
 // produce 1.0.
 pub fn build_convolution_filter(
     width: usize,
     height: usize,
-    overscan: f64,
+    x_overscan: usize,
+    y_overscan: usize
 ) -> Image {
-    let w_overscan = (width as f64 * overscan).ceil() as usize;
-    let h_overscan = (height as f64 * overscan).ceil() as usize;
-
-    let w_full = width + 2 * w_overscan;
-    let h_full = height + 2 * h_overscan;
+    let w_full = width + 2 * x_overscan;
+    let h_full = height + 2 * y_overscan;
 
     let x_step = 2.0 / width as f64;
     let y_step = 2.0 / height as f64;
@@ -222,19 +222,33 @@ mod tests {
         }
     }
 
+    // Most of the tests exercise overscan, since we want to make sure
+    // the full functionality works. This helper adds 30% extra pixels
+    // all around the border.
+    fn build_convolution_filter_overscan(w: usize, h: usize) -> Image {
+        let overscan = 0.3;
+        let w_over = (w as f64 * overscan).ceil() as usize;
+        let h_over = (h as f64 * overscan).ceil() as usize;
+        let filter = build_convolution_filter(w, h, w_over, h_over);
+
+        // Since our tests want to exercise the centre being pixel-aligned
+        // or not, check the parity is preserved when adding a border.
+        assert!(filter.width % 2 == w % 2);
+        assert!(filter.height % 2 == h % 2);
+
+        filter
+    }
+
+
     // Check that the integral over the convolution filter is what we expect
     // (integral = r).
     #[test]
     fn test_convolution_integral_even() {
-        let (base_width, base_height) = (128, 128);
-        let overscan = 0.3;
-        let filter = build_convolution_filter(base_width, base_height, overscan);
-        assert!(filter.width % 2 == 0);
-        assert!(filter.height % 2 == 0);
-
+        let (base_w, base_h) = (128, 128);
+        let filter = build_convolution_filter_overscan(base_w, base_h);
         // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / base_width as f64;
-        let y_step = 2.0 / base_height as f64;
+        let x_step = 2.0 / base_w as f64;
+        let y_step = 2.0 / base_h as f64;
 
         // Sample the centre of pixels - offset by 0.5.
         let x_offset = (filter.width as f64 - 1.0) / 2.0;
@@ -277,15 +291,12 @@ mod tests {
     // which means we sample on the singularity at r = 0.
     #[test]
     fn test_convolution_integral_odd() {
-        let (base_width, base_height) = (129, 129);
-        let overscan = 0.3;
-        let filter = build_convolution_filter(base_width, base_height, overscan);
-        assert!(filter.width % 2 == 1);
-        assert!(filter.height % 2 == 1);
+        let (base_w, base_h) = (129, 129);
+        let filter = build_convolution_filter_overscan(base_w, base_h);
 
         // Yet more C&P of the pixel iterator code...
-        let x_step = 2.0 / base_width as f64;
-        let y_step = 2.0 / base_height as f64;
+        let x_step = 2.0 / base_w as f64;
+        let y_step = 2.0 / base_h as f64;
 
         // Sample the centre of pixels - offset by 0.5.
         let x_offset = (filter.width as f64 - 1.0) / 2.0;
@@ -327,11 +338,8 @@ mod tests {
     // Check that the convolution filter is symmetric.
     #[test]
     fn test_convolution_symmetric() {
-        let (base_width, base_height) = (128, 129);
-        let overscan = 0.3;
-        let filter = build_convolution_filter(base_width, base_height, overscan);
-        assert!(filter.width % 2 == 0);
-        assert!(filter.height % 2 == 1);
+        let (base_w, base_h) = (128, 129);
+        let filter = build_convolution_filter_overscan(base_w, base_h);
 
         for y1 in 0..filter.height {
             let y2 = filter.height - 1 - y1;
@@ -355,15 +363,14 @@ mod tests {
     // non-overscanned version.
     #[test]
     fn test_convolution_overscan() {
-        let (base_width, base_height) = (128, 129);
-        let overscan = 0.3;
-        let filter = build_convolution_filter(base_width, base_height, overscan);
-        let filter_no_over = build_convolution_filter(base_width, base_height, 0.0);
-        assert_eq!(filter_no_over.width, base_width);
-        assert_eq!(filter_no_over.height, base_height);
+        let (base_w, base_h) = (128, 129);
+        let filter = build_convolution_filter_overscan(base_w, base_h);
+        let filter_no_over = build_convolution_filter(base_w, base_h, 0, 0);
+        assert_eq!(filter_no_over.width, base_w);
+        assert_eq!(filter_no_over.height, base_h);
 
-        let w_adj = (filter.width - base_width) / 2;
-        let h_adj = (filter.height - base_height) / 2;
+        let w_adj = (filter.width - base_w) / 2;
+        let h_adj = (filter.height - base_h) / 2;
 
         for y in 0..filter_no_over.height {
             let y2 = y + h_adj;
@@ -387,7 +394,7 @@ mod tests {
 
         // Generate a convolution filter, no overscan. Integral up to
         // radius 1.0 is 1.0
-        let generated = build_convolution_filter(width, height, 0.0);
+        let generated = build_convolution_filter(width, height, 0, 0);
 
         // Generate an image with a circle at the centre. We will later
         // scale it down to a circle one pixel in diameter, to be close
