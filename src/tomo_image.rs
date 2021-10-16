@@ -17,13 +17,13 @@ pub struct Image {
 
 impl Index<(usize, usize)> for Image {
     type Output = f64;
-    fn index<'a>(&'a self, (x, y): (usize, usize)) -> &'a f64 {
+    fn index(&self, (x, y): (usize, usize)) -> &f64 {
         &self.data[y * self.width + x]
     }
 }
 
 impl IndexMut<(usize, usize)> for Image {
-    fn index_mut<'a>(&'a mut self, (x, y): (usize, usize)) -> &'a mut f64 {
+    fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut f64 {
         &mut self.data[y * self.width + x]
     }
 }
@@ -242,7 +242,7 @@ impl Image {
     #[allow(dead_code)]
     pub fn normalise(&self, scale: f64, lower: f64, upper: f64) -> Image {
         let mut sorted_data = self.data.clone();
-        sorted_data.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let max_idx = sorted_data.len() - 1;
         let lower_val = sorted_data[(lower * max_idx as f64).round() as usize];

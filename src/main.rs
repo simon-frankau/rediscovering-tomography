@@ -164,7 +164,7 @@ fn calculate_error(base_image: &Image, new_image: &Image) {
         return;
     }
 
-    let rms_error = base_image.rms_diff(&new_image);
+    let rms_error = base_image.rms_diff(new_image);
     println!("RMS of per-pixel error: {}", rms_error);
 }
 

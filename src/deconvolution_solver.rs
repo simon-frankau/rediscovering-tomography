@@ -58,13 +58,13 @@ struct FFTImage {
 
 impl Index<(usize, usize)> for FFTImage {
     type Output = Complex64;
-    fn index<'a>(&'a self, (x, y): (usize, usize)) -> &'a Complex64 {
+    fn index(&self, (x, y): (usize, usize)) -> &Complex64 {
         &self.data[y * self.width + x]
     }
 }
 
 impl IndexMut<(usize, usize)> for FFTImage {
-    fn index_mut<'a>(&'a mut self, (x, y): (usize, usize)) -> &'a mut Complex64 {
+    fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Complex64 {
         &mut self.data[y * self.width + x]
     }
 }
@@ -191,7 +191,7 @@ pub fn reconstruct(
 
     // 1. Create the convolved image.
     let convolved_img =
-        crate::convolution_solver::reconstruct_overscan(&scan, width,
+        crate::convolution_solver::reconstruct_overscan(scan, width,
             height, w_overscan, h_overscan);
 
     // 2. Build the deconvolution filter in frequency space.
