@@ -29,7 +29,7 @@ error_data: target/release/rediscovering-tomography results
 	            --rays=$${RAYS} --angles=$${ANGLES} \
 	            --output-scan=results/test_scan_r$${RAYS}_a$${ANGLES}.png \
 	            --output-image=results/test_r$${RAYS}_a$${ANGLES}.png | \
-	                grep 'Average per-pixel error' | grep -oE '[0-9.]+' ; \
+	                grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
 	    done \
 	done
 
@@ -41,6 +41,6 @@ error_data2: target/release/rediscovering-tomography results
 	            --rays=$${RAYS} --angles=$${ANGLES} \
 	            --output-scan=results/test_scan_r$${RAYS}_a$${ANGLES}.png \
 	            --output-image=results/test_r$${RAYS}_a$${ANGLES}.png | \
-	                grep 'Average per-pixel error' | grep -oE '[0-9.]+' ; \
+	                grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
 	    done \
 	done

@@ -137,7 +137,7 @@ done a bit of investigation and drawn a line under it! I should only
 invest so much time in empirical studies of convergence.
 
 I ran a bunch of conversions, and put the results in [this
-sheet](https://docs.google.com/spreadsheets/d/1mdHI4n2HNloAuYGf7aMaZISQnpawe0drygIFAd0lKsA/edit?usp=sharing).
+sheet](https://docs.google.com/spreadsheets/d/1mdHI4n2HNloAuYGf7aMaZISQnpawe0drygIFAd0lKsA/edit).
 Interesting things to note are:
 
  * For my test image, of size 32x32 (1024 pixels), convergence
@@ -245,6 +245,16 @@ Important factors in accuracy:
  * Getting the input and output correctly aligned (previous point is basically
    sub-pixel alignment)
  * And hence, making sure your code works for odd- and even-sized images.
+
+Creating another spreadsheet tracking the error from the
+matrix-inversion approach with a variety of numbers of rays and
+angles, the results are at
+https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=0
+. Interesting to note that now the error doesn't get floored around
+0.05 per-pixel, but goes all the way to zero for sufficient rays and
+angles - we get a fully-accurate reconstruction, which makes sense
+when the inverse matrix is fully determined, but is still an
+impressive result. The raw data is stored in analysis/errors.csv.
 
 
 # TODOs
