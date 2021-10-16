@@ -56,3 +56,18 @@ error_data2: target/release/rediscovering-tomography results
 	                grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
 	    done \
 	done
+
+# This is a version of error_data for finding the source of error associated
+# with deconvolution-based reconstruction
+recon_error_data: target/release/rediscovering-tomography results
+	for RAYS_ANGLES in 20 40 80 160 320 640; do \
+	    for MULT in 1.0 2.0 3.0 4.0 5.0 ; do \
+	        /bin/echo -n "$${RAYS_ANGLES},$${MULT}," ; \
+	        target/release/rediscovering-tomography --input-image=images/test.png \
+	            --rays=$${RAYS_ANGLES} --angles=$${RAYS_ANGLES} \
+	            --output-image=results/test_recon_$${RAYS_ANGLES}_$${MULT}.png \
+	            --diff-image=results/test_recon_diff_$${RAYS_ANGLES}_$${MULT}.png \
+	            --algorithm=deconvolution --recon-multiplier=$${MULT} | \
+	                grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
+	    done \
+	done

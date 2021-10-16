@@ -267,6 +267,23 @@ asymptotically we approach the non-repeating case. (Some other error
 comes from the frequencies attenuated by the convolution, but we're
 ignoring that.)
 
+Looking at the error as we vary the rays/angles count and the size of
+the reconstruction image (raw data in analysis/recon_error.csv,
+tabular data in the sheet), we can see that the error flattens off
+around a --recon-multiplier of 2.0, and the error bottoms out when the
+number of rays and angles is roughly twice the image size (for a 32x32
+image, 80 rays and 80 angles actually minimises error, on this
+relatively sparse set of test cases).
+
+As error does not asymptotically head to zero, or even close to that,
+it seems like there's some other source of error. Looking at the diff
+images on the reconstruction of the test image, it's not noise, it's
+the whole of the central question mark being slightly the wrong level,
+even at many rays/angles and a large reconstruction image. So, some
+normalisation step isn't quite right.
+
+TODO: Analyse how to fix the normalisation?
+
 # TODOs
 
  * Investigate other algorithms for reconstruction?

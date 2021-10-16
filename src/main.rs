@@ -112,7 +112,7 @@ fn generate_reconstruction(
     original: &Option<Image>,
     scan: &Scan,
 ) -> Image {
-    const DEFAULT_RECON_MULTIPLIER: f64 = 5.0;
+    const DEFAULT_RECON_MULTIPLIER: f64 = 2.0;
 
     // When choosing image size, prefer the command-line flag,
     // otherwise infer from original size, otherwise guess based on
