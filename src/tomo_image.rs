@@ -227,18 +227,22 @@ impl Image {
 
     // Normalise the data between 0 and the given value. Useful for
     // making random test data into an image that can be viewed.
-    pub fn normalise(&self, scale: f64) -> Image {
-        let max = self.data.iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+    //
+    // It takes two percentiles, representing the points we want to
+    // map to 0 and the given value. Well, not percentiles, but values
+    // 0-1, but I'm not quite sure what to call that. Values outside
+    // the range are *not* clamped.
+    pub fn normalise(&self, scale: f64, lower: f64, upper: f64) -> Image {
+        let mut sorted_data = self.data.clone();
+        sorted_data.sort_by(|a, b| a.partial_cmp(&b).unwrap());
 
-        let min = self.data.iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+        let max_idx = sorted_data.len() - 1;
+        let lower_val = sorted_data[(lower * max_idx as f64).round() as usize];
+        let upper_val = sorted_data[(upper * max_idx as f64).round() as usize];
 
         let data = self.data
             .iter()
-            .map(|p| (p - min) * scale / (max - min))
+            .map(|p| (p - lower_val) * scale / (upper_val - lower_val))
             .collect::<Vec<_>>();
 
         Image {
