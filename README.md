@@ -280,13 +280,15 @@ it seems like there's some other source of error. Looking at the diff
 images on the reconstruction of the test image, it's not noise, it's
 the whole of the central question mark being slightly the wrong level,
 even at many rays/angles and a large reconstruction image. So, some
-normalisation step isn't quite right.
+normalisation step isn't quite right, or there's just some other
+source of error. However, I feel I've got something that's not bad
+now, and am hitting diminishing returns on playing about with this
+thing.
 
-TODO: Analyse how to fix the normalisation?
+TODO: Still, analyse error if you introduce noise into the scan.
 
 # TODOs
 
- * Investigate other algorithms for reconstruction?
  * Also, it'd be nice if the tools had decent error handling. It's
    kind of optional for this toy-level tool, but it's good practice,
    right?
