@@ -5,15 +5,20 @@
 // deconvolves it to obtain a better approximation of the original.
 //
 
-use itertools::iproduct;
 use rustfft::{num_complex::Complex64, FftDirection, FftPlanner};
 use std::ops::{Index, IndexMut};
-use std::path::Path;
 
 use crate::tomo_image::Image;
-use crate::tomo_scan::{Scan, scan};
+use crate::tomo_scan::Scan;
 
-use crate::convolution_solver::{build_convolution_filter};
+use crate::convolution_solver::build_convolution_filter;
+
+#[cfg(test)]
+use itertools::iproduct;
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use crate::tomo_scan::scan;
 
 ////////////////////////////////////////////////////////////////////////
 // Utilities

@@ -9,11 +9,14 @@
 //
 
 use nalgebra::base::{DMatrix, DVector};
-use std::path::Path;
 
 use crate::tomo_image::Image;
-use crate::tomo_scan::{Scan, calculate_scan_weights, scan};
+use crate::tomo_scan::{Scan, calculate_scan_weights};
 
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use crate::tomo_scan::scan;
 
 // Generate the matrix that goes from the image to the scan of the
 // image. This matrix is what we'll invert.

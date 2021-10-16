@@ -57,6 +57,7 @@ impl Image {
 
     // Scales down the image by the given factor, which must divide
     // width and height. Useful for oversampling.
+    #[cfg(test)]
     pub fn downscale(&self, factor: usize) -> Image {
         assert!(self.width % factor == 0);
         assert!(self.height % factor == 0);
@@ -157,6 +158,7 @@ impl Image {
     // our filters are symmetric so it makes no difference here.
     // Rather than doing anything clever at the edges, we just produce
     // a smaller output image than the input.
+    #[cfg(test)]
     pub fn naive_convolve(&self, filter: &Image) -> Image {
         let mut data = Vec::new();
         for y in 0..(self.height - filter.height + 1) {

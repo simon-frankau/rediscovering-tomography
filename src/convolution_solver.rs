@@ -10,10 +10,14 @@
 // this image.
 //
 
-use std::path::Path;
-
 use crate::tomo_image::Image;
-use crate::tomo_scan::{Scan, scan};
+use crate::tomo_scan::Scan;
+
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use crate::tomo_scan::scan;
+
 
 // Integrate across all the rays that pass through a given point.
 // Given point is in (-1..1, -1..1) coordinates.
