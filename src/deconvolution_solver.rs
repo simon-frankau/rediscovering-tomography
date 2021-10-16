@@ -14,11 +14,11 @@ use crate::tomo_scan::Scan;
 use crate::convolution_solver::build_convolution_filter;
 
 #[cfg(test)]
+use crate::tomo_scan::scan;
+#[cfg(test)]
 use itertools::iproduct;
 #[cfg(test)]
 use std::path::Path;
-#[cfg(test)]
-use crate::tomo_scan::scan;
 
 ////////////////////////////////////////////////////////////////////////
 // Utilities
@@ -80,7 +80,6 @@ impl FFTImage {
         }
         self.data = new_data;
         std::mem::swap(&mut self.width, &mut self.height);
-
     }
 
     // Perform a 1d FFT, in place. Used by fourier_transform.
@@ -96,7 +95,7 @@ impl FFTImage {
     // Core of 2D FFT, used by from_image and to_image.
     fn fourier_transform(self, dir: FftDirection) -> FFTImage {
         let mut tmp = FFTImage {
-            width:self.width,
+            width: self.width,
             height: self.height,
             data: self.data,
         };
@@ -114,7 +113,7 @@ impl FFTImage {
         let input = FFTImage {
             width: img.width,
             height: img.height,
-            data: to_complex(&img.data)
+            data: to_complex(&img.data),
         };
         input.fourier_transform(FftDirection::Forward)
     }
@@ -157,7 +156,8 @@ impl FFTImage {
         assert_eq!(self.width, filter.width);
         assert_eq!(self.height, filter.height);
 
-        self.data = self.data
+        self.data = self
+            .data
             .iter()
             .zip(filter.data.iter())
             .map(|(z1, z2)| z1 * z2)
@@ -169,12 +169,7 @@ impl FFTImage {
 // Deconvolution-based reconstruction entry point
 //
 
-pub fn reconstruct(
-    scan: &Scan,
-    width: usize,
-    height: usize,
-    recon_multiplier: f64,
-) -> Image {
+pub fn reconstruct(scan: &Scan, width: usize, height: usize, recon_multiplier: f64) -> Image {
     // FFT assumes we're convolving repeating patterns, when actually we're
     // convolving a finite approximation of an infinite filter with a
     // bounded scan image. As we increase the space around the image,
@@ -190,17 +185,20 @@ pub fn reconstruct(
     let h_overscan = (height as f64 * per_side_factor) as usize;
 
     // 1. Create the convolved image.
-    let convolved_img =
-        crate::convolution_solver::reconstruct_overscan(scan, width,
-            height, w_overscan, h_overscan);
+    let convolved_img = crate::convolution_solver::reconstruct_overscan(
+        scan, width, height, w_overscan, h_overscan,
+    );
 
     // 2. Build the deconvolution filter in frequency space.
     //
     // Make the filter centred at the centre of a pixel, by being
     // odd-sized.
-    let filter = build_convolution_filter(width | 1, height | 1,
-        w_overscan, h_overscan)
-        .trim(0, 0, 2 * w_overscan + width, 2 * h_overscan + height);
+    let filter = build_convolution_filter(width | 1, height | 1, w_overscan, h_overscan).trim(
+        0,
+        0,
+        2 * w_overscan + width,
+        2 * h_overscan + height,
+    );
 
     let mut filter_fft = FFTImage::from_image(&filter);
     filter_fft.invert(1e-2);
@@ -256,9 +254,7 @@ mod tests {
         // Give it some awkward sizes. :)
         let width = 13;
         let height = 17;
-        let data = (0..(height * width))
-            .map(|p| p as f64)
-            .collect::<Vec<_>>();
+        let data = (0..(height * width)).map(|p| p as f64).collect::<Vec<_>>();
 
         let input = Image {
             width,
@@ -317,8 +313,7 @@ mod tests {
 
         let (width, height) = (src_img.width, src_img.height);
 
-        let convolved_img =
-            crate::convolution_solver::reconstruct(&scan, width, height);
+        let convolved_img = crate::convolution_solver::reconstruct(&scan, width, height);
 
         // 2. Build the deconvolution filter in frequency space.
         let filter = build_convolution_filter(width, height, 0, 0);
@@ -360,10 +355,7 @@ mod tests {
         // 2. Then we show that the biggest weights are at the centre.
 
         // Get a sorted list of all the weights...
-        let mut sorted_weights = inv_filter.data
-            .iter()
-            .map(|p| p.abs())
-            .collect::<Vec<_>>();
+        let mut sorted_weights = inv_filter.data.iter().map(|p| p.abs()).collect::<Vec<_>>();
         sorted_weights.sort_by(|a, b| b.partial_cmp(&a).unwrap());
 
         // And then a sorted list of the weights in the centre.
@@ -372,13 +364,12 @@ mod tests {
         // see comment on test_decon_kernel
         let centre_x = inv_filter.width as isize / 2 + 1;
         let centre_y = inv_filter.height as isize / 2 + 1;
-        let mut centre_sorted_weights =
-            iproduct!(0..(inv_filter.width), 0..(inv_filter.height))
+        let mut centre_sorted_weights = iproduct!(0..(inv_filter.width), 0..(inv_filter.height))
             .filter(|(x, y)| {
                 let dx = *x as isize - centre_x;
                 let dy = *y as isize - centre_y;
                 dx * dx + dy * dy < centre_radius * centre_radius
-             })
+            })
             .map(|p| inv_filter[p].abs())
             .collect::<Vec<_>>();
         centre_sorted_weights.sort_by(|a, b| b.partial_cmp(&a).unwrap());
@@ -386,8 +377,10 @@ mod tests {
         // And show that the biggest weights in the centre are the
         // biggest weights.
         let last_centre_idx = centre_sorted_weights.len() - 1;
-        assert_eq!(sorted_weights[last_centre_idx],
-                   centre_sorted_weights[last_centre_idx]);
+        assert_eq!(
+            sorted_weights[last_centre_idx],
+            centre_sorted_weights[last_centre_idx]
+        );
 
         // 3. Show that the weights fall off quickly - the 21st element
         // is a tiny fraction of the biggest weight.
@@ -425,9 +418,13 @@ mod tests {
 
         // Generate a convolved image with overscan. The size of
         // the image will be reduced when we perform the convolution.
-        let convolved =
-            crate::convolution_solver::reconstruct_overscan(
-                &scan, width, height, k_width / 2, k_height / 2);
+        let convolved = crate::convolution_solver::reconstruct_overscan(
+            &scan,
+            width,
+            height,
+            k_width / 2,
+            k_height / 2,
+        );
 
         // 2. Generate the image-space deconvolution kernel.
 
@@ -452,8 +449,7 @@ mod tests {
         // suffice to say the shift is necessary.
         let k_x_offset = (inv_filter.width - k_width + 1) / 2;
         let k_y_offset = (inv_filter.height - k_height + 1) / 2;
-        let mut kernel_img = inv_filter.trim(k_x_offset + 1, k_y_offset + 1,
-                                             k_width, k_height);
+        let mut kernel_img = inv_filter.trim(k_x_offset + 1, k_y_offset + 1, k_width, k_height);
 
         // To get the appropriate weighting, we need to find what
         // applying this new deconvolution filter to the original
@@ -461,8 +457,7 @@ mod tests {
         // to 1.0 to make it work.
         let weight = filter
             .trim(k_x_offset, k_y_offset, k_width, k_height)
-            .naive_convolve(&kernel_img)
-            [(0,0)];
+            .naive_convolve(&kernel_img)[(0, 0)];
         kernel_img = kernel_img.scale_values(1.0 / weight);
 
         // 3. Apply the kernel to get a reconstruction.
@@ -500,17 +495,30 @@ mod tests {
 
         let (width, height) = (src_img.width, src_img.height);
 
-        let convolved_img =
-            crate::convolution_solver::reconstruct_overscan(&scan, width, height, width * overscan_factor, height * overscan_factor);
+        let convolved_img = crate::convolution_solver::reconstruct_overscan(
+            &scan,
+            width,
+            height,
+            width * overscan_factor,
+            height * overscan_factor,
+        );
 
         // 2. Build the deconvolution filter in frequency space.
 
         // Make the filter centred at the centre of a pixel, by being
         // odd-sized.
-        let filter = build_convolution_filter(width | 1, height | 1,
-            width * overscan_factor, height * overscan_factor)
-            .trim(0, 0, width * (2 * overscan_factor + 1),
-                        height * (2 * overscan_factor + 1));
+        let filter = build_convolution_filter(
+            width | 1,
+            height | 1,
+            width * overscan_factor,
+            height * overscan_factor,
+        )
+        .trim(
+            0,
+            0,
+            width * (2 * overscan_factor + 1),
+            height * (2 * overscan_factor + 1),
+        );
 
         let mut filter_fft = FFTImage::from_image(&filter);
         filter_fft.invert(1e-2);
@@ -524,8 +532,12 @@ mod tests {
         // Shift image to centre, and trim around it.
         let dst_img = norm_res
             .shift((norm_res.width + 1) / 2, (norm_res.height + 1) / 2)
-            .trim(width * overscan_factor, height * overscan_factor,
-                  width, height);
+            .trim(
+                width * overscan_factor,
+                height * overscan_factor,
+                width,
+                height,
+            );
 
         // Pretty decent improvement on test_basic_image_deconvolve.
         //

@@ -9,7 +9,7 @@ mod deconvolution_solver;
 mod matrix_inversion_solver;
 
 use tomo_image::Image;
-use tomo_scan::{Scan, scan};
+use tomo_scan::{scan, Scan};
 
 ////////////////////////////////////////////////////////////////////////
 // Main entry point
@@ -107,11 +107,7 @@ fn generate_scan(opts: &Opts) -> (Option<Image>, Scan) {
     }
 }
 
-fn generate_reconstruction(
-    opts: &Opts,
-    original: &Option<Image>,
-    scan: &Scan,
-) -> Image {
+fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -> Image {
     const DEFAULT_RECON_MULTIPLIER: f64 = 2.0;
 
     // When choosing image size, prefer the command-line flag,
@@ -136,18 +132,26 @@ fn generate_reconstruction(
             resolution
         });
     if let Algorithm::Deconvolution = opts.algorithm {
-        assert!(opts.recon_multiplier.unwrap_or(1.0) >= 1.0,
-                "--recon-multiplier must be greater than or equal to 1.0")
+        assert!(
+            opts.recon_multiplier.unwrap_or(1.0) >= 1.0,
+            "--recon-multiplier must be greater than or equal to 1.0"
+        )
     } else {
         assert!(
             opts.recon_multiplier.is_none(),
-            "--recon-multiplier can only be used with --algorithm=deconvolution");
+            "--recon-multiplier can only be used with --algorithm=deconvolution"
+        );
     }
 
     match opts.algorithm {
         Algorithm::MatrixInversion => matrix_inversion_solver::reconstruct(scan, width, height),
         Algorithm::Convolution => convolution_solver::reconstruct(scan, width, height),
-        Algorithm::Deconvolution => deconvolution_solver::reconstruct(scan, width, height, opts.recon_multiplier.unwrap_or(DEFAULT_RECON_MULTIPLIER)),
+        Algorithm::Deconvolution => deconvolution_solver::reconstruct(
+            scan,
+            width,
+            height,
+            opts.recon_multiplier.unwrap_or(DEFAULT_RECON_MULTIPLIER),
+        ),
     }
 }
 

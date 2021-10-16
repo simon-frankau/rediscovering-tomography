@@ -11,12 +11,12 @@
 use nalgebra::base::{DMatrix, DVector};
 
 use crate::tomo_image::Image;
-use crate::tomo_scan::{Scan, calculate_scan_weights};
+use crate::tomo_scan::{calculate_scan_weights, Scan};
 
 #[cfg(test)]
-use std::path::Path;
-#[cfg(test)]
 use crate::tomo_scan::scan;
+#[cfg(test)]
+use std::path::Path;
 
 // Generate the matrix that goes from the image to the scan of the
 // image. This matrix is what we'll invert.
@@ -108,7 +108,8 @@ mod tests {
         let angles = 50;
 
         let src_img = Image::load(Path::new("images/test.png"));
-        let src_data = DVector::from_iterator(src_img.width * src_img.height, src_img.data.iter().copied());
+        let src_data =
+            DVector::from_iterator(src_img.width * src_img.height, src_img.data.iter().copied());
 
         let matrix = generate_forwards_matrix(src_img.width, src_img.height, angles, rays);
 
@@ -148,10 +149,12 @@ mod tests {
 
         let width = 8;
         let height = 8;
-        let data = (0..8 * 8).map(|p| {
-            let (x, y) = (p % 8, p / 8);
-            x as f64 * 8.0 + if y >= 4 { 64.0 } else { 0.0 }
-        }).collect::<Vec<_>>();
+        let data = (0..8 * 8)
+            .map(|p| {
+                let (x, y) = (p % 8, p / 8);
+                x as f64 * 8.0 + if y >= 4 { 64.0 } else { 0.0 }
+            })
+            .collect::<Vec<_>>();
 
         let src_img = Image {
             width,

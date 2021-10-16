@@ -3,7 +3,6 @@
 //
 // Load and save into a vector of floats, plus basic image manipulation.
 //
-
 use image::{GrayImage, Pixel};
 use std::ops::{Index, IndexMut};
 use std::path::Path;
@@ -45,13 +44,12 @@ impl Image {
     }
 
     pub fn save(&self, path: &Path) {
-        let data_as_u8: Vec<u8> = self.data
+        let data_as_u8: Vec<u8> = self
+            .data
             .iter()
             .map(|p| p.max(0.0).min(255.0) as u8)
             .collect::<Vec<_>>();
-        let img = GrayImage::from_vec(
-            self.width as u32,
-            self.height as u32, data_as_u8).unwrap();
+        let img = GrayImage::from_vec(self.width as u32, self.height as u32, data_as_u8).unwrap();
         img.save(path).unwrap();
     }
 
@@ -185,15 +183,17 @@ impl Image {
         assert_eq!(self.width, other.width);
         assert_eq!(self.height, other.height);
 
-        let diff = self.data
-            .iter().zip(other.data.iter())
+        let diff = self
+            .data
+            .iter()
+            .zip(other.data.iter())
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>();
 
         Image {
             width: self.width,
             height: self.height,
-            data: diff
+            data: diff,
         }
     }
 
@@ -202,8 +202,10 @@ impl Image {
         assert_eq!(self.width, other.width);
         assert_eq!(self.height, other.height);
 
-        let sum_squares_diff: f64 = self.data
-            .iter().zip(other.data.iter())
+        let sum_squares_diff: f64 = self
+            .data
+            .iter()
+            .zip(other.data.iter())
             .map(|(a, b)| (a - b) * (a - b))
             .sum();
 
@@ -216,7 +218,7 @@ impl Image {
         Image {
             width: self.width,
             height: self.height,
-            data
+            data,
         }
     }
 
@@ -226,7 +228,7 @@ impl Image {
         Image {
             width: self.width,
             height: self.height,
-            data
+            data,
         }
     }
 
@@ -248,14 +250,12 @@ impl Image {
         let lower_val = sorted_data[(lower * max_idx as f64).round() as usize];
         let upper_val = sorted_data[(upper * max_idx as f64).round() as usize];
 
-        let data = self.data
+        let data = self
+            .data
             .iter()
             .map(|p| (p - lower_val) * scale / (upper_val - lower_val))
             .collect::<Vec<_>>();
 
-        Image {
-            data,
-            ..*self
-        }
+        Image { data, ..*self }
     }
 }

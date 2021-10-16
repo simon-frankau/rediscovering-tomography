@@ -4,7 +4,6 @@
 // Given an image, generate a scan of it, integrating along paths at
 // different angles and offsets.
 //
-
 use std::path::Path;
 
 use crate::tomo_image::Image;
@@ -185,19 +184,12 @@ pub fn scan(image: &Image, angles: usize, rays: usize) -> Scan {
             );
 
             let weights = calculate_scan_weights(ray_start, ray_end, image.width, image.height);
-            let integral = weights
-                .iter()
-                .map(|(x, y, wt)| image[(*x, *y)] * wt)
-                .sum();
+            let integral = weights.iter().map(|(x, y, wt)| image[(*x, *y)] * wt).sum();
             data.push(integral);
         }
     }
 
-    Scan {
-        angles,
-        rays,
-        data,
-    }
+    Scan { angles, rays, data }
 }
 
 impl Scan {
@@ -234,10 +226,7 @@ mod tests {
 
     // We may sometimes *just* touch the corner of a pixel. Skip them.
     fn assert_eq_pixels(expected: &[(usize, usize, f64)], actual: &[(usize, usize, f64)]) {
-        let filtered_actual: Vec<_> = actual
-            .into_iter()
-            .filter(|(_, _, w)| *w > 1e-14)
-            .collect();
+        let filtered_actual: Vec<_> = actual.into_iter().filter(|(_, _, w)| *w > 1e-14).collect();
 
         assert_eq!(expected.len(), filtered_actual.len());
         for ((x1, y1, w1), (x2, y2, w2)) in expected.iter().zip(filtered_actual.iter()) {
