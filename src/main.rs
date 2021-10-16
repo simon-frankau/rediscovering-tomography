@@ -58,6 +58,11 @@ struct Opts {
     diff_image: Option<String>,
     #[clap(arg_enum, long, default_value = "matrix-inversion")]
     algorithm: Algorithm,
+    #[clap(long)]
+    /// How many times bigger the reconstruction image should be than
+    /// the original. Should be at least 1.0, and only used in
+    /// deconvolution mode.
+    recon_multiplier: Option<f64>,
 }
 
 // Generate a scan, and return the image it was generated from, if available.
@@ -107,6 +112,8 @@ fn generate_reconstruction(
     original: &Option<Image>,
     scan: &Scan,
 ) -> Image {
+    const DEFAULT_RECON_MULTIPLIER: f64 = 5.0;
+
     // When choosing image size, prefer the command-line flag,
     // otherwise infer from original size, otherwise guess based on
     // scan size.
@@ -128,11 +135,19 @@ fn generate_reconstruction(
             );
             resolution
         });
+    if let Algorithm::Deconvolution = opts.algorithm {
+        assert!(opts.recon_multiplier.unwrap_or(1.0) >= 1.0,
+                "--recon-multiplier must be greater than or equal to 1.0")
+    } else {
+        assert!(
+            opts.recon_multiplier.is_none(),
+            "--recon-multiplier can only be used with --algorithm=deconvolution");
+    }
 
     match opts.algorithm {
         Algorithm::MatrixInversion => matrix_inversion_solver::reconstruct(scan, width, height),
         Algorithm::Convolution => convolution_solver::reconstruct(scan, width, height),
-        Algorithm::Deconvolution => deconvolution_solver::reconstruct(scan, width, height),
+        Algorithm::Deconvolution => deconvolution_solver::reconstruct(scan, width, height, opts.recon_multiplier.unwrap_or(DEFAULT_RECON_MULTIPLIER)),
     }
 }
 

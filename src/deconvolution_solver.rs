@@ -164,32 +164,38 @@ impl FFTImage {
 // Deconvolution-based reconstruction entry point
 //
 
-pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
+pub fn reconstruct(
+    scan: &Scan,
+    width: usize,
+    height: usize,
+    recon_multiplier: f64,
+) -> Image {
     // FFT assumes we're convolving repeating patterns, when actually we're
     // convolving a finite approximation of an infinite filter with a
     // bounded scan image. As we increase the space around the image,
     // in the limit it should converge on what we want.
     //
-    // "overscan_factor" is how many diameters we add on - "1" reconstructs
-    // with an image 3x the size of the original, "2" 5x.
-    //
-    // TODO: This is very counterintuitive, and should also be
-    // a parameter rather than a constant.
-    let overscan_factor = 2;
+    // "recon_multiplier" is how many times the image used during
+    // reconstruction is wider than the base image. Minimum 1.0.
+    assert!(recon_multiplier >= 1.0);
+
+    // Add half the extra amount on each side.
+    let per_side_factor = (recon_multiplier - 1.0) / 2.0;
+    let w_overscan = (width as f64 * per_side_factor) as usize;
+    let h_overscan = (height as f64 * per_side_factor) as usize;
 
     // 1. Create the convolved image.
     let convolved_img =
         crate::convolution_solver::reconstruct_overscan(&scan, width,
-            height, width * overscan_factor, height * overscan_factor);
+            height, w_overscan, h_overscan);
 
     // 2. Build the deconvolution filter in frequency space.
     //
     // Make the filter centred at the centre of a pixel, by being
     // odd-sized.
     let filter = build_convolution_filter(width | 1, height | 1,
-        width * overscan_factor, height * overscan_factor)
-        .trim(0, 0, width * (2 * overscan_factor + 1),
-                    height * (2 * overscan_factor + 1));
+        w_overscan, h_overscan)
+        .trim(0, 0, 2 * w_overscan + width, 2 * h_overscan + height);
 
     let mut filter_fft = FFTImage::from_image(&filter);
     filter_fft.invert(1e-2);
@@ -204,8 +210,7 @@ pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
     // 4. Shift image to centre, trim around it, and return the result.
     norm_res
         .shift((norm_res.width + 1) / 2, (norm_res.height + 1) / 2)
-        .trim(width * overscan_factor, height * overscan_factor,
-              width, height)
+        .trim(w_overscan, h_overscan, width, height)
 }
 
 #[cfg(test)]

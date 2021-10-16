@@ -17,7 +17,13 @@ demo: target/release/rediscovering-tomography results
 demo2: target/release/rediscovering-tomography results
 	target/release/rediscovering-tomography --input-image=images/test.png \
 	    --rays=35 --angles=40 --output-image=results/test2.png \
-	    --diff-image=results/test2-diff.png --algorithm=deconvolution\
+	    --diff-image=results/test2-diff.png --algorithm=deconvolution
+
+demo3: target/release/rediscovering-tomography results
+	target/release/rediscovering-tomography --input-image=images/test.png \
+	    --rays=200 --angles=200 --output-image=results/test3.png \
+	    --diff-image=results/test3-diff.png --algorithm=deconvolution \
+	    --recon-multiplier=2.0
 
 # Try a range of angles/rays around the resolution of the image
 # (32x32), and see what the associated per-pixel error generated is.
