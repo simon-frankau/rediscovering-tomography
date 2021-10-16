@@ -19,6 +19,7 @@ use tomo_scan::{Scan, scan};
 pub enum Algorithm {
     MatrixInversion,
     Convolution,
+    Deconvolution,
 }
 
 /// This doc string acts as a help message when the user runs '--help'
@@ -131,6 +132,7 @@ fn generate_reconstruction(
     match opts.algorithm {
         Algorithm::MatrixInversion => matrix_inversion_solver::reconstruct(scan, width, height),
         Algorithm::Convolution => convolution_solver::reconstruct(scan, width, height),
+        Algorithm::Deconvolution => deconvolution_solver::reconstruct(scan, width, height),
     }
 }
 

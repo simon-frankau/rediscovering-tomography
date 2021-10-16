@@ -256,6 +256,16 @@ angles - we get a fully-accurate reconstruction, which makes sense
 when the inverse matrix is fully determined, but is still an
 impressive result. The raw data is stored in analysis/errors.csv.
 
+After this, we're implementing deconvolution-based reconstrution in
+the command-line tool. I believe most of the error from this algorithm
+comes from the fact that FFTs assume repeating waveforms are being
+convoluted, when what we're actually trying to (de)convolve is (the
+inverse of) a finite part of a filter that dies off slowly with 1/r,
+and a bounded-size scan. We can reduce this error by increasing the
+size of the scan and the filter around the original image, so that
+asymptotically we approach the non-repeating case. (Some other error
+comes from the frequencies attenuated by the convolution, but we're
+ignoring that.)
 
 # TODOs
 

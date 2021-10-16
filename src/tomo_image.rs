@@ -129,6 +129,9 @@ impl Image {
     // Expand an image by adding a border of zeros, placing the
     // original image at (x_off, y_off), and resizing the image to
     // (w, h).
+    //
+    // Useful debugging/testing function, even if not used right now.
+    #[allow(dead_code)]
     pub fn expand(&self, x_off: usize, y_off: usize, w: usize, h: usize) -> Image {
         assert!(x_off + self.width <= w);
         assert!(y_off + self.height <= h);
@@ -232,6 +235,9 @@ impl Image {
     // map to 0 and the given value. Well, not percentiles, but values
     // 0-1, but I'm not quite sure what to call that. Values outside
     // the range are *not* clamped.
+    //
+    // Useful debugging/testing function, even if not used right now.
+    #[allow(dead_code)]
     pub fn normalise(&self, scale: f64, lower: f64, upper: f64) -> Image {
         let mut sorted_data = self.data.clone();
         sorted_data.sort_by(|a, b| a.partial_cmp(&b).unwrap());

@@ -11,7 +11,7 @@ use std::ops::{Index, IndexMut};
 use std::path::Path;
 
 use crate::tomo_image::Image;
-use crate::tomo_scan::scan;
+use crate::tomo_scan::{Scan, scan};
 
 use crate::convolution_solver::{build_convolution_filter};
 
@@ -160,6 +160,54 @@ impl FFTImage {
     }
 }
 
+////////////////////////////////////////////////////////////////////////
+// Deconvolution-based reconstruction entry point
+//
+
+pub fn reconstruct(scan: &Scan, width: usize, height: usize) -> Image {
+    // FFT assumes we're convolving repeating patterns, when actually we're
+    // convolving a finite approximation of an infinite filter with a
+    // bounded scan image. As we increase the space around the image,
+    // in the limit it should converge on what we want.
+    //
+    // "overscan_factor" is how many diameters we add on - "1" reconstructs
+    // with an image 3x the size of the original, "2" 5x.
+    //
+    // TODO: This is very counterintuitive, and should also be
+    // a parameter rather than a constant.
+    let overscan_factor = 2;
+
+    // 1. Create the convolved image.
+    let convolved_img =
+        crate::convolution_solver::reconstruct_overscan(&scan, width,
+            height, width * overscan_factor, height * overscan_factor);
+
+    // 2. Build the deconvolution filter in frequency space.
+    //
+    // Make the filter centred at the centre of a pixel, by being
+    // odd-sized.
+    let filter = build_convolution_filter(width | 1, height | 1,
+        width * overscan_factor, height * overscan_factor)
+        .trim(0, 0, width * (2 * overscan_factor + 1),
+                    height * (2 * overscan_factor + 1));
+
+    let mut filter_fft = FFTImage::from_image(&filter);
+    filter_fft.invert(1e-2);
+
+    // 3. Perform the deconvolution.
+    let mut fft = FFTImage::from_image(&convolved_img);
+    fft.convolve(&filter_fft);
+    let res = fft.to_image();
+
+    let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
+
+    // 4. Shift image to centre, trim around it, and return the result.
+    norm_res
+        .shift((norm_res.width + 1) / 2, (norm_res.height + 1) / 2)
+        .trim(width * overscan_factor, height * overscan_factor,
+              width, height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,8 +324,8 @@ mod tests {
         let norm_res = res.scale_values(1.0 / (res.width * res.height) as f64);
         let dst_img = norm_res.shift(width / 2, height / 2);
 
-        // TODO: This error is pretty huge, but small enough to mean
-        // the image is roughly right.
+        // This error is pretty huge, but small enough to mean the
+        // image is roughly right.
         //
         // Note the error is smaller than in
         // convolution_solver::test::test_reconstruct - we're doing
