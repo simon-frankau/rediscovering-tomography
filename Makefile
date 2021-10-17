@@ -1,7 +1,7 @@
 # This Makefile just acts as a way of wrapping up a few
 # commands/scripts. Not a real build thing.
 
-target/release/rediscovering-tomography: Cargo.toml Cargo.lock src/main.rs
+target/release/rediscovering-tomography: Cargo.toml Cargo.lock src/*.rs
 	cargo +nightly build --release
 
 results:
@@ -70,4 +70,17 @@ recon_error_data: target/release/rediscovering-tomography results
 	            --algorithm=deconvolution --recon-multiplier=$${MULT} | \
 	                grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
 	    done \
+	done
+
+# Inject varying degrees of noise into deconvolution-based reconstruction,
+# to see what that does to the error reported
+noise_error_data: target/release/rediscovering-tomography results
+	for NOISE in 1.0e-10 0.01 0.02 0.04 0.08 0.16 0.32 0.64 1.28 ; do \
+	    /bin/echo -n "$${NOISE}," ; \
+	    target/release/rediscovering-tomography --input-image=images/test.png \
+	        --rays=80 --angles=80 \
+	        --output-image=results/test_noise_$${NOISE}.png \
+	        --diff-image=results/test_noise_diff_$${NOISE}.png \
+	        --algorithm=deconvolution --noise=$${NOISE} | \
+	            grep 'RMS of per-pixel error' | grep -oE '[0-9.]+' ; \
 	done

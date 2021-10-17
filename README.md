@@ -317,9 +317,26 @@ back-projection as the integral around each point. The filter to use
 is a "ramp" filter, applied before back-propagation. I will not be
 implementing it.
 
+Adding the ability to add noise to the intermediate scan, and varying
+the noise, results are in
+https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=1342061078
+, also analysis/noise_errors.csv, we can see that for large errors
+being added, the RMS error out is proportional to the noise added. As
+there is some base level error in my reconstruction (darn it),
+asymptotically it then goes to that base error as the added noise goes
+to zero.
+
+Interestingly, looking at the kind of noise we see in the resulting
+image, having added noise into the scan, it does just look like fairly
+uniform noise - there aren't artefacts like streaky lines or blobby
+errors or anything. This could be because the noise was added
+uniformly to the scan, and if we applied a big impulse of noise in one
+place to the scan we might expect to see weird artefacts in the
+reconstructed image. However, I don't plan to spend the time following
+that up!
+
 # TODOs
 
- * Still, analyse error if you introduce noise into the scan.
  * Also, it'd be nice if the tools had decent error handling. It's
    kind of optional for this toy-level tool, but it's good practice,
    right?
