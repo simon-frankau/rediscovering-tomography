@@ -285,12 +285,42 @@ source of error. However, I feel I've got something that's not bad
 now, and am hitting diminishing returns on playing about with this
 thing.
 
-TODO: Still, analyse error if you introduce noise into the scan.
+# Switching over: The official algorithm
+
+Watched https://www.youtube.com/watch?v=f0sxjhGHRPo from
+https://twitter.com/sigfpe/status/1441455463439110148 , which also
+talks about back-propagation. I don't tend to get the details of
+mathematical arguments from videos, but it does look suspiciously like
+there's a filter in the frequency domain and a reconstruction across
+all angles. In the video, the filter is applied before the summing
+across all angles. I haven't thought about it too hard, but given
+everything's linear I would expect you could do the integration and
+filter in either order.
+
+Nice to see cutting off the high frequencies to reduce noise is
+included, given the fun I had with finding the deconvolution due to
+attenuated frequencies, mostly in the high-frequency part. The nice
+thing about doing this mathematically is that you get the
+deconvolution filter directly, rather than by inverting the forward
+filter, which I assume improves accuracy.
+
+Moving on to Wikipedia, judging by
+https://en.wikipedia.org/wiki/Tomography, it looks like I've
+reinvented "filtered back projection". It's interesting to see it's a
+relatively noisy approach compared to
+https://en.wikipedia.org/wiki/Iterative_reconstruction. The
+statistical methods look really cool, but I'm not going to spend more
+time on this!
+
+In filtered back projection, looks like I've accidentally reinvented
+back-projection as the integral around each point. The filter to use
+is a "ramp" filter, applied before back-propagation. I will not be
+implementing it.
 
 # TODOs
 
+ * Still, analyse error if you introduce noise into the scan.
  * Also, it'd be nice if the tools had decent error handling. It's
    kind of optional for this toy-level tool, but it's good practice,
    right?
- * Read up the official approach! :p
- * Restructure the README once I'm done to make sense?
+ * Restructure the README once I'm done to make sense.
