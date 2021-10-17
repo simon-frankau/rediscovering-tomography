@@ -1,3 +1,4 @@
+use anyhow::{bail, ensure, Result};
 use clap::{AppSettings, ArgEnum, Clap};
 use std::path::Path;
 use rand::prelude::*;
@@ -74,11 +75,9 @@ struct Opts {
 }
 
 // Generate a scan, and return the image it was generated from, if available.
-fn generate_scan(opts: &Opts) -> (Option<Image>, Scan) {
-    // TODO: More graceful error handling than assert!/panic!.
-
+fn generate_scan(opts: &Opts) -> Result<(Option<Image>, Scan)> {
     if let Some(name) = &opts.input_image {
-        assert!(
+        ensure!(
             opts.input_scan.is_none(),
             "Please specify only one of --input-image and --input-scan"
         );
@@ -94,24 +93,24 @@ fn generate_scan(opts: &Opts) -> (Option<Image>, Scan) {
             resolution
         });
         let scanned = scan(&image, angles, rays);
-        (Some(image), scanned)
+        Ok((Some(image), scanned))
     } else if let Some(name) = &opts.input_scan {
-        assert!(
+        ensure!(
             opts.angles.is_none(),
             "--angles cannot be used with --input-scan"
         );
-        assert!(
+        ensure!(
             opts.rays.is_none(),
             "--rays cannot be used with --input-scan"
         );
-        assert!(
+        ensure!(
             opts.diff_image.is_none(),
             "--diff-image cannot be used with --input-scan"
         );
 
-        (None, Scan::load(Path::new(&name)))
+        Ok((None, Scan::load(Path::new(&name))))
     } else {
-        panic!("One of --input-image and --input-scan must be specified");
+        bail!("One of --input-image and --input-scan must be specified");
     }
 }
 
@@ -126,7 +125,7 @@ fn add_noise(scan: &Scan, opts: &Opts) -> Scan {
     scan.add_noise(&mut rng, noise)
 }
 
-fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -> Image {
+fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -> Result<Image> {
     const DEFAULT_RECON_MULTIPLIER: f64 = 2.0;
 
     // When choosing image size, prefer the command-line flag,
@@ -151,18 +150,18 @@ fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -
             resolution
         });
     if let Algorithm::Deconvolution = opts.algorithm {
-        assert!(
+        ensure!(
             opts.recon_multiplier.unwrap_or(1.0) >= 1.0,
             "--recon-multiplier must be greater than or equal to 1.0"
         )
     } else {
-        assert!(
+        ensure!(
             opts.recon_multiplier.is_none(),
             "--recon-multiplier can only be used with --algorithm=deconvolution"
         );
     }
 
-    match opts.algorithm {
+    Ok(match opts.algorithm {
         Algorithm::MatrixInversion => matrix_inversion_solver::reconstruct(scan, width, height),
         Algorithm::Convolution => convolution_solver::reconstruct(scan, width, height),
         Algorithm::Deconvolution => deconvolution_solver::reconstruct(
@@ -171,7 +170,7 @@ fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -
             height,
             opts.recon_multiplier.unwrap_or(DEFAULT_RECON_MULTIPLIER),
         ),
-    }
+    })
 }
 
 fn calculate_error(base_image: &Image, new_image: &Image) {
@@ -191,22 +190,22 @@ fn calculate_error(base_image: &Image, new_image: &Image) {
     println!("RMS of per-pixel error: {}", rms_error);
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
 
-    let (input_image, mut scan) = generate_scan(&opts);
+    let (input_image, mut scan) = generate_scan(&opts)?;
 
     if opts.noise.is_some() {
         scan = add_noise(&scan, &opts);
     } else {
-        assert!(
+        ensure!(
             opts.seed.is_none(),
             "--seed can only be used with --noise"
         );
     }
 
     eprint!("Processing... ");
-    let reconstruction = generate_reconstruction(&opts, &input_image, &scan);
+    let reconstruction = generate_reconstruction(&opts, &input_image, &scan)?;
     eprintln!("done!");
 
     if let Some(ref image) = input_image {
@@ -234,4 +233,6 @@ fn main() {
             .offset_values(128.0)
             .save(Path::new(&name));
     }
+
+    Ok(())
 }

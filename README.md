@@ -337,7 +337,4 @@ that up!
 
 # TODOs
 
- * Also, it'd be nice if the tools had decent error handling. It's
-   kind of optional for this toy-level tool, but it's good practice,
-   right?
  * Restructure the README once I'm done to make sense.
