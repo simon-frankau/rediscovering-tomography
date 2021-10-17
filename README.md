@@ -232,75 +232,181 @@ very attractive in the real world. While I'd proven to myself that I
 could reconstruct a scan (what I'd originally set out to achieve),
 could I do it in a way that's practical in the real world?
 
-**TODO: Finish tidying up the contents of this file**
+The next period of this project involved a fair amount of starting
+into space and thinking about the problem in my spare time. It did,
+admittedly, also involve writing out and manipulating a bunch of
+integrals, but that turned out to be much less effective!
 
-# Next steps
+My key insight was that if we integrate over all the rays passing
+through a point, we get a weighted sum of pixel values from the
+original image, symmetric around the point, with the weights
+increasing towards the centre. In other words, we've managed to get
+the value of the original image passed through a blurring filter.
+Moreover, this same-shaped filtered-value can be found for all points
+in the image by integrating over the rays passing through that point.
 
-It'd be nice to work out a more mathematically-structured and
-efficient way of performing the transformation. I think a useful
-approach is to start looking at the transform in polar coordinates. In
-that case, the inverse transform can be characterised by the linear
-transform required for one radial slice, and then it can be applied to
-all the different radial slices. Moreover... this kind of "perform the
-dot product, but for all rotations" sounds suspiciously like a
-convolution. A Fourier transform can make the implementation more
-efficient, but also hints at how we might approach this transform
-algebraically...
+Put another way, taking the Radon transform and, for each point in
+image space, integrating over all the rays going through that point,
+is equivalent to convolving the original image with a *1/r* weighted
+filter.
 
-# Next steps again
+*I later found out that this reconstruction approach by integrating
+over all the rays through the point is known as "back propagation".*
 
-Having thought a little further, we can, for each point, generate an
-integral of all the rays that pass through that point, integrating
-over the different angles. This will give us an integral over the
-space that is radially symmetric, and we can get this for each point
-in the grid. The result is a convolution of the image with a weighting
-function, and we can deconvolve it. At least, that's the plan. Let's
-try...
+To get this blurred reconstruction, you can use the
+`--algorithm=convolution` mode on the binary.
 
-Right now we have `--algorithm=matrix-inversion` as the default
-existing algorithm, and `--algorithm=convolution` as generating the
-(not deconvolved) integral version.
+Once we have a convolved image, we can apply deconvolution techniques
+to get back to the original image!
 
-# Further next steps
+## On deconvolution
 
-Deconvolution requires performing the inverse of a convolution, which
-can be done by taking the Fourier transform of the filter, and taking
-the reciprocal of all its values (since convolution is just
-multiplication in the frequency domain).
+**Disclaimer:** Convolution of two signals officially involves
+flipping one of the signals over before integrating them against each
+other, but the filters I'm looking at are symmetrical, so I'm skipping
+over that bit. Generally, I'm playing fast and loose on the maths,
+doing just enough to make things work...
 
-One tricky step with this is that if a frequency is highly attenuated
-by the filter, the coefficient in the Fourier domain will be tiny, its
-reciprocal huge, and the deconvolution can be incredibly noisy. So we
-just drop frequencies which have really small coefficients, and live
-with dropping some frequencies.
+I'd been aware of deconvolution for a while, and been looking for an
+excuse to play around with it. The idea is that a convolution in the
+frequency domain is achieved by performing a point-wise multiplication
+of the image with the filter. Therefore, inverting the convolution is
+simply a matter of doing a point-wise division by the filter instead.
+Easy, eh?
 
-The next piece of trickiness is to work out to size the filters. The
-1/r convolution filter that performing the scan and then integrating
-gives us an infinitely-wide filter, that only tails off gradually with
-distance. It's possible we'll only get good results if we create an
-integral-of-scan that's much larger than the original image. How big
-does the filter need to be? Well, we can take the deconvolution filter
-FFT we just created, and bring it back to the image domain.
+In practice, this turned out to be the fiddliest, most "learn how to
+do numerical methods less badly" part of the whole exercise, and I've
+got to admit I never achieved absolutely awesome convergence. Read on
+to learn more. ;)
 
-If we do this, we find there's a really small kernel with large
-coefficients, and the rest is hardly used (indeed, I don't know how
-wide the kernel is if we did this algebraically, rather than with
-throw-it-at-the-wall-and-see-what-sticks numerical methods). Using a
-FFT to represent a tiny little kernel seems both inefficient and
-unlikely to be accurate (a tiny kernel having a lot of high-frequency
-components), so the next step is to try to apply the kernel in the
-image domain and see how well it performs.
+*I found this deconvolution filter by building the convolution filter
+and then numerically converting it to a deconvolution filter in
+frequency space. I could have algebraically attempted to find the
+deconvolution filter instead. The standard algorithm is to use a
+"ramp" high-pass filter. This makes intuitive sense, since the
+blurring performed by back-propagation is effectively a low-pass
+filter, so to "balance the frequency response" back we want to apply a
+high-pass filter. But no, I took the numerical route...*
 
-# Again...
+I picked up the `rustfft` crate and hacked away. It's easy to use, but
+getting good deconvolution results needs more than that:
 
-If I try using a small kernel (`test_decon_kernel`), it locally
-sharpens the image, but there is still some wider blurriness. I guess
-this is because, while the weight of far-away pixels is low, there are
-a lot of them, so they do meaningfully contribute. I will now try
-going back to an FFT/large-size convolution filter approach, and see
-if this works better...
+### Building the filter
 
-# And again...
+In order to build a deconvolution filter by inverting the convolution
+filter, you need to build the convolution filter! This turned out to
+be trickier than I expected, and is what the code in
+`convolution_solver::build_convolution_filter` is about.
+
+The filter applies a weight proportional to *1/r* to each pixel.
+Unfortunately, that means... infinite weight at the origin?! We need
+*some* value there, which is likely to be a really large weight to
+behave correctly, but it certainly can't be infinite! We need some way
+of discretising this appropriately. What I ended up doing is having a
+minimal *r* that is half the radius of a pixel, and it seems to do the
+trick. I can't say it's mathematically well-founded, though!
+
+Various tests in `convolution_solver` then exercise the filter.
+Because of the behaviour at small radii, it behaves somewhat
+differently for odd (filter centred in the middle of a pixel) and even
+(centre between pixels) filter size. The tests include building a
+sinogram of a point and back-propagating it, and checking that it
+roughly matches the filter we generate
+(`test_convolution_comparison`). It roughly does, but it leaves me
+wondering if it's a non-trivial source of error.
+
+### Frequency response
+
+A convolution filter might highly attenuate some frequencies - the
+filter requires you to multiply by a very small number. The
+deconvolution filter would then have you multiply by a very large
+number, introducing noise into the reconstruction. This is indeed what
+happened when I naively tried deconvolution, resulting in images with
+highly visible high-frequency artefacts.
+
+What do we do? Well, those frequencies are basically lost, there's no
+way to reconstruct them, so let's not try. If a transform coefficient
+is small, I just set the inverse coefficient to zero, instead of a
+huge number. Yes, some component of the original image is lost, but it
+was already lost, and adding noise doesn't bring it back.
+
+### How big should the filter be?
+
+Performing back-propagation is like using a *1/r* convolution filter,
+and *1/r* dies off pretty slowly with radius. For perfect
+reconstruction, we'd want an infinitely large image. How wide do we
+need the convolved image to be in order to get a decent
+reconstruction?
+
+I'm all for the empirical approach, rather than hard work with
+algebra. We can find out how the deconvolution filter works by taking
+the convolution filter, FFTing it, inverting it in frequency space,
+and FFTing it back. This will give us an image space deconvolution
+filter that we can inspect.
+
+If you do this, what you find is that most of the weight is right at
+the centre of the filter kernel. This is what I did in
+`deconvolution_solver::test_generate_decon_filter`.
+
+Hmmm. If most of the weight is in a small filter kernel, maybe we can
+just apply that small kernel (perhaps in image space), and get the
+results we want quite cheaply? Let's try it!
+
+### A dead-end: trying a small deconvolution filter kernel
+
+So, we've just found out most of the weights in the deconvolution
+filter are in the centre. Using a FFT to represent a tiny little
+kernel seems both inefficient and unlikely to be accurate (a tiny
+kernel having a lot of high-frequency components), so the next step is
+to try to apply the kernel in the image domain and see how well it
+performs.
+
+In `deconvolution_solver::test_decon_kernel`, I snip a 9x9
+deconvolution filter out of the FFT-based deconvolution filter (yes,
+not a very scientific approach, I know), and try applying it as a
+naive convolution...
+
+It turns out the per-pixel RMS error is pretty much the same as that
+from the unfiltered back-propagation approach in
+`convolution_solver::test_reconstruct`. Looking at the reconstructed
+images, the filtered images are sharper, but the bits that should be
+totally black are dark grey because the filter fails to take account
+of the more distant parts of the image that should be subtracted. In
+other words, it looks like the low-weighted parts of the filter do
+still have value, and we'd be best off using a large kernel and an
+FFT-based deconvolution.
+
+An interesting dead end, but it's time to get back to the main track.
+
+### An Aside: Checking quality of fit
+
+Actually, first a quick aside on checking how well an algorithm
+performs. I'd been using per-pixel error calculations - initially with
+absolute error, later switching to RMS. That's not the important bit.
+The important bit was that I forgot to set a baseline. So, when
+back-propagation gave me an error number, it didn't mean much to me,
+but it looked plausible. What I'd failed to realise until rather later
+is that because my test image is mostly black, a completely black
+image doesn't have a huge per-pixel error. Only by finding out what
+the base error was (in
+`convolution_solver::test_null_reconstruction`), did I realise quite
+how badly the basic algorithms scored!
+
+The other lesson I learnt was that it's useful to not just look at a
+summary number, but look at an image diffing the source and
+reconstruction. This makes it much clearer when you've made a mistake,
+in a way that a single number doesn't. For example, if the
+reconstruction is misaligned with the original image by a pixel, the
+error number might not be huge, but it's very clear in the image.
+
+### Back to FFT-based deconvolution
+
+Having decided a small deconvolution kernel was a dead end, I decided
+to go back to full FFT-based deconvolution, and see if I could improve
+on the error in the simple `test_basic_image_deconvolve`
+implementation.
+
+TODO: Rewrite from here on down.
 
 While refactoring, I've noticed that the reconstruction error of the
 matrix approach has shrunk dramatically since I first wrote the code,
@@ -413,3 +519,6 @@ reconstructed image. However, I don't plan to spend the time following
 that up!
 
 TODO: nonogram!
+
+TODO:
+
