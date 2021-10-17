@@ -1,7 +1,7 @@
-# Learning to redisocver tomography
+# Reinventing tomography
 
-I know nothing about Radon transforms beyond the name, and the vague
-idea of how tomography works, piecing together the original structure
+I knew nothing about Radon transforms beyond the name, and the vague
+idea of how tomography works, by piecing together the original structure
 from scans through it. However, it's always fascinated me, and since
 having a CAT scan for the first time a few months ago, the idea's
 returned to me:
@@ -10,73 +10,105 @@ returned to me:
 that can bcak out a structure from scans?*
 
 My initial thought was that I'd read up on the maths, and implement
-it. However, it seems more fun to try to work it out for myself, and
-then check my workings afterwards, so this is what I intend to do
-here.
+it. However, it seems more fun to try to work it out for myself from
+scratch, and then check my workings afterwards, so this is what I
+intend to do here.
 
-## Problem statement
+This doc is more-or-less a log of how I've reinvented tomography,
+using the code in this repo, with my ideas and lessons learnt along
+the way. In many places I'm playing fast and loose, since I didn't
+want to take up too much time with this (despite having taken a bunch
+of wall time to work on it).
+
+*Knowledge gained in retrospect that's useful to know as we go along
+will be in italics.*
+
+## My starting point: A problem statement
 
 The idea is that we're shooting a beam through an object at a bunch of
 angles from a bunch of starting locations (in our case, in a 2D
-plane), collecting how much of the beam makes it through, and using
-that to infer the amount of absorption at each point within that
-object.
+plane), noting how much of the beam makes it through, and using that
+to infer the amount of absorption at each point within that object.
 
 What we're actually going to do here is take an image, pretend it's an
 object, work out what the beams would do, and then take that data and
 feed it through our own transform to try to infer the image that we
 just fired beams through.
 
-I think a bonus project is to see how stable it is - add noise to the
-beam data, and see how much noise it adds to the inferred picture.
+A bonus would be to see how stable the algorithms are - add noise to
+the beam data, and see how much noise it adds to the inferred picture.
 
 Somewhere near the end, I'll probably look up the actual theory for
 these transforms and see how it compares.
 
-## My cheap theory
+## How to scan an object
 
-When you fire a beam through a uniform medium, for every distance it
-travels through the material, a certain percentage of the beam is
-knocked out. I don't know if this is precisely physically true, but
-I'm going to pretend it is. In other words, the medium exponentially
-attenuates the beam.
+In order to reconstruct an image from the scan data, we must first
+generate the scan data. So, the first step is to write some code that
+will "scan" an image.
 
-So, let's take the log of that. The amount of exponential attenuation
-then becomes the exponential of the sum of the logs of the attenuation
-factors for all the points along the path. In other words, we can
+In my project, I'll assume we'll be firing a set of parallel rays
+through the object from all different angles. We could also assume the
+rays are being fired in all directions from a point that moves around
+the circumference of a circle. In the end we collect the same data,
+being a set of rays at all different angles and different nearest
+approaches to the origin. Using parallel rays seemed to simplify the
+algorithms.
+
+I'll assume we're scanning the object from all directions in a 180
+degree arc (beyond that point we're just scanning the same rays from
+the other side).
+
+I'm assuming that in the real world, when you fire a beam through a
+uniform medium, for every distance it travels through the material, a
+certain percentage of the beam is knocked out. I don't know if this is
+precisely physically true, but I'm going to pretend it is. In other
+words, the medium exponentially attenuates the beam.
+
+So, let's take the log of that, converting the product of attenuation
+factors into a sum of log attenuation factors. In other words, we can
 integrate the (log'd) factors along the path to get the numbers we
-need.
+need. As it simplifies things and I don't want to chuck in extra
+exponential/log calculations, we'll do everything with straightforward
+integration over the ray paths.
 
-In the discrete image domain, each beam is a weighted sum of pixels.
-This is a linear transform. Going from log'd input image to log'd beam
-attenuations is simply a matrix multiplication. And, assuming that
-matrix is of the right shape and non-singular, we can invert it!
+This scan generates an image showing the amount of material along a
+path for a given angle and distance the ray passes from the origin.
 
-This means that we don't need to develop any clever algebraic theory
-for the transform - we can just throw a computer at it and see what
-the result is. It might be horribly unstable, but we can also play
-about with it to see if this is the case, empirically.
+*What I have reinvented here is the "sinogram", and generating a
+sinogram is the Radon transform. I'd been assuming that "Radon
+transform" was the complicated reconstruction bit, but apparently it's
+just the scanning algorithm. Where you see a "Scan" in my code, that's
+a sinogram.*
 
-Dumb fun!
+## Reconstruction with a cheap trick
 
-## My theory of doing things right
+In the discrete image domain, each beam, being an integral along a
+path, is just a weighted sum of pixels. Transforming from input image
+to the set of ray values is just a linear transform!
+
+The Radon transform is simply a matrix multiplication, and assuming
+that the matrix is of the right shape and non-singular, we can invert
+it! This means that we don't need to develop any clever algebraic
+theory for the transform - we can just throw a computer at it and see
+what the result is. Wow, wasn't that easy?!
+
+## An interlude: Looking ahead, how might we do things "right"?
 
 Note that the above approach would also work for Fourier transforms -
 to do an inverse Fourier transform, we could "just" work out a forward
 transform matrix, and then invert it. Of course, in practice we don't
 because algebra tells us it's self-inverting.
 
-I'm skipping the algebra as I'm doing the cheap approach mentioned
-above, but it's still fun to think how I might approach it. The
-problem is fundamentally, given a function *A* that calculates log
-attenuation in terms of an integral of a log density function *D* along a
-line, where *A* is parameterised in terms of start point and
-direction, and *D* in terms of location, invert this to find the
-function *D* in terms of *A*.
+My plan is to not throw any algebra at the problem yet, since matrix
+inversion is a simple numeric method I can get immediately started on,
+but it's still fun to think how I might approach it algebraically.
 
-To make use of symmetry, I'd probably put the location parameters for
-*D* as polar coordinates, so that the inverse function can be
-calculated purely in terms of radius (being rotationally symmetric).
+The problem is fundamentally inversion of the Radon transform. To make
+use of symmetry, I'd probably use polar coordinates for the space
+domain, so that the inverse function can be calculated in terms of
+radius with a fixed angle, without loss of generality (being
+rotationally symmetric).
 
 Actually, scratch that. Assuming we've got the full set of paths
 available, we can solve just for the origin, and translate the data so
@@ -92,52 +124,79 @@ now be weighted by distance from the center of rotation. We just need
 to find a clever way of finding a version where the weighting along
 the path is a Dirac delta function! Easy, I'm sure.
 
-Anyway, I'm not doing this right now, I'm doing the matrix inversion
-version. :)
+*In the end, the "we can just solve for the origin" solution worked
+ nicely - I found an algorithm that could be applied for any point by
+ translation. I never did make use of finding the differential in the
+ sinogram value as we alter radius/angle, though.*
 
-## Implementation
+## Implementating the matrix inversion cheap trick
 
-I'm not bothering to do the whole log/exp thing on the input and
-output data. It doesn't really add anything as far as I care. I'm
-using `nalgebra` to do the matrix inversion, and `image` to load and
-save the images being transformed.
+This section talks about the implementation of the algorithm used by
+`--algorithm=matrix-inversion`.
 
-To calculate the weights along the paths as they traverse the pixels,
-I'm doing something akin to old-school scan conversion. I'm making my
-own vectors for this, as using a full 2D vector class just feels like
-overkill. The model is that the pixels are solid squares, and the line
-is of zero width, and we want to know how long the line segment that
-crosses each pixel is.
+As mentioned above, we're working with rays being simple line
+integrals - no exponential attenuation.
+
+I should have perhaps mentioned that most of the coding I'm doing
+nowadays is also an excuse to learn Rust. I'm using the `nalgebra`
+crate to do the matrix inversion, and the `image` crate to load and
+save the (png) images being transformed.
+
+To calculate the weights along the paths as they traverse the image,
+I'm doing something akin to old-school scan conversion (in
+`tomo_scan::calculate_weights_inner`). I'm making my own vectors for
+this, as using a full 2D vector class just feels like overkill. The
+model is that the pixels are solid squares, and the line is of zero
+width, and we want to know how long the line segment that crosses each
+pixel is.
 
 I then use that to build the data for sets of parallel rays at a bunch
-of different angles. If I plot this data as an image, you can see
-sinusoids that represent a chunk of matter rotating round. The phase
-and amplitude represent the angle and radius of that piece of mass.
-(Perhaps this implies a smarter algorithm for inverting the
+of different angles (*a sinogram*), in the function `tomo_scan::scan`.
+Plotting this 2D data as an image reveals a nice pattern of
+overlapping sinusoids that represent a chunk of matter rotating round.
+The phase and amplitude represent the angle and radius of that piece
+of mass. (Perhaps this implies a smarter algorithm for inverting the
 transform?)
 
+*(I never made use of this for my reconstruction algorithms, but
+sinograms do look neat!)*
+
 Finding the pseudo-inverse of the matrix and applying it... works!
-Hurrah. Interestingly, the size of the error seems to vary quite a lot
-with the number of path samples, so this looks like it'll be worth
-some investigation.
+Hurrah.
+
+Interestingly, the size of the error seems to vary quite a lot with
+the number of rays sampled, I'll follow this up with an investigation
+into size of the error with count of parallel rays and angles.
 
 `make demo` should exercise the image-to-transform-and-back cycle.
 
 It's pretty darn slow, since it performs a matrix inverse on a matrix
 whose dimensions are the width-height product of the image, and
-rays-angles product of the scan, respectively. Images much bigger than
-30x30 get pretty slow on my laptop.
+rays-angles product of the scan, respectively. A naive implementation
+is *O((wh)^3)*, where *w* and *h* are the dimensions of the image in
+pixels. Images much bigger than 30x30 get pretty slow on my laptop.
 
-## Convergence
+## Convergence of the matrix inversion approach
 
-I tried modifying the number of rays and angles to see how quickly the
-reconstruction converges on the original. I know this a bit of a
-rabbit-hole for me, based on previous numerical code projects, so I've
-done a bit of investigation and drawn a line under it! I should only
-invest so much time in empirical studies of convergence.
+Back in a previous life, I worked in a quant team at a bank, where
+there were a lot of numerical methods going on, and ocasionally I'd be
+interested in convergence of those methods (as well as trying to
+remember what I learnt on the subject as an undergrad).
 
-I ran a bunch of conversions, and put the results in [this
+My memory was that doing this stuff could quite happily turn into a
+huge time sink, but it's useful enough to do a bit of and then move
+on...
+
+What I did was run the conversion for various numbers of rays and
+angles to see how quickly the reconstruction converges on the
+original. Empirical studies of algorithmic convergence are fun!
+
+The `Makefile` targets `error_data` and `error_data2` generate the
+data needed (two targets were used to avoid trying to calculate the
+error for a bunch of slow-to-calculate, uninteresting cases. The
+results are in [this
 sheet](https://docs.google.com/spreadsheets/d/1mdHI4n2HNloAuYGf7aMaZISQnpawe0drygIFAd0lKsA/edit).
+
 Interesting things to note are:
 
  * For my test image, of size 32x32 (1024 pixels), convergence
@@ -156,6 +215,24 @@ Interesting things to note are:
 
 It's all very intriguing, but probably best not to get too distracted
 by it.
+
+*I later discovered that the lower bound on the error comes from the
+discretisation applied when generating an 8-bit image, and convergence
+is much better if not discretised! One of the lessons I'd forgotten is
+if you numerical method seems to converge on some non-zero error as
+you tweak parameters, there's probably a source of error that isn't
+associated with the parameters you're tweaking, and you may want to
+investigate! At this stage, I was working out average per-pixel
+absolute error. Later I switched to RMS per-pixel error.*
+
+## In search of a more efficient algorithm
+
+An algorithm that's *O(n^6)* in the length of the image side is... not
+very attractive in the real world. While I'd proven to myself that I
+could reconstruct a scan (what I'd originally set out to achieve),
+could I do it in a way that's practical in the real world?
+
+**TODO: Finish tidying up the contents of this file**
 
 # Next steps
 
@@ -335,6 +412,4 @@ place to the scan we might expect to see weird artefacts in the
 reconstructed image. However, I don't plan to spend the time following
 that up!
 
-# TODOs
-
- * Restructure the README once I'm done to make sense.
+TODO: nonogram!
