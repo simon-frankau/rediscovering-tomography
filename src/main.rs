@@ -1,5 +1,7 @@
 use clap::{AppSettings, ArgEnum, Clap};
 use std::path::Path;
+use rand::prelude::*;
+use rand_pcg::Pcg64;
 
 mod tomo_image;
 mod tomo_scan;
@@ -63,6 +65,12 @@ struct Opts {
     /// the original. Should be at least 1.0, and only used in
     /// deconvolution mode.
     recon_multiplier: Option<f64>,
+    #[clap(long)]
+    /// How much uniform noise to add to the scan, as fraction of maximum scan value.
+    noise: Option<f64>,
+    #[clap(long)]
+    /// Seed for the random noise (for reproducibility)
+    seed: Option<u64>,
 }
 
 // Generate a scan, and return the image it was generated from, if available.
@@ -105,6 +113,17 @@ fn generate_scan(opts: &Opts) -> (Option<Image>, Scan) {
     } else {
         panic!("One of --input-image and --input-scan must be specified");
     }
+}
+
+fn add_noise(scan: &Scan, opts: &Opts) -> Scan {
+    const DEFAULT_SEED: u64 = 42;
+    const DEFAULT_NOISE: f64 = 0.0;
+
+    let seed = opts.seed.unwrap_or(DEFAULT_SEED);
+    let noise = opts.noise.unwrap_or(DEFAULT_NOISE);
+
+    let mut rng = Pcg64::seed_from_u64(seed);
+    scan.add_noise(&mut rng, noise)
 }
 
 fn generate_reconstruction(opts: &Opts, original: &Option<Image>, scan: &Scan) -> Image {
@@ -175,7 +194,16 @@ fn calculate_error(base_image: &Image, new_image: &Image) {
 fn main() {
     let opts: Opts = Opts::parse();
 
-    let (input_image, scan) = generate_scan(&opts);
+    let (input_image, mut scan) = generate_scan(&opts);
+
+    if opts.noise.is_some() {
+        scan = add_noise(&scan, &opts);
+    } else {
+        assert!(
+            opts.seed.is_none(),
+            "--seed can only be used with --noise"
+        );
+    }
 
     eprint!("Processing... ");
     let reconstruction = generate_reconstruction(&opts, &input_image, &scan);

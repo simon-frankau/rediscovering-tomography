@@ -98,11 +98,7 @@ impl Image {
             }
         }
 
-        Image {
-            width,
-            height,
-            data,
-        }
+        Image { data, ..*self }
     }
 
     // Trim an image down to a sub-image, size (w, h), starting at
@@ -183,18 +179,14 @@ impl Image {
         assert_eq!(self.width, other.width);
         assert_eq!(self.height, other.height);
 
-        let diff = self
+        let data = self
             .data
             .iter()
             .zip(other.data.iter())
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>();
 
-        Image {
-            width: self.width,
-            height: self.height,
-            data: diff,
-        }
+        Image { data, ..*self }
     }
 
     // Calculate the RMS of per-pixel difference between two images
@@ -215,21 +207,13 @@ impl Image {
     // Multiply all the points by the given value.
     pub fn scale_values(&self, a: f64) -> Image {
         let data = self.data.iter().map(|b| a * b).collect::<Vec<_>>();
-        Image {
-            width: self.width,
-            height: self.height,
-            data,
-        }
+        Image { data, ..*self }
     }
 
     // Add an offset to all values.
     pub fn offset_values(&self, a: f64) -> Image {
         let data = self.data.iter().map(|b| a + b).collect::<Vec<_>>();
-        Image {
-            width: self.width,
-            height: self.height,
-            data,
-        }
+        Image { data, ..*self }
     }
 
     // Normalise the data between 0 and the given value. Useful for

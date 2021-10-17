@@ -4,6 +4,8 @@
 // Given an image, generate a scan of it, integrating along paths at
 // different angles and offsets.
 //
+use rand::distributions::Uniform;
+use rand::prelude::*;
 use std::path::Path;
 
 use crate::tomo_image::Image;
@@ -193,6 +195,22 @@ pub fn scan(image: &Image, angles: usize, rays: usize) -> Scan {
 }
 
 impl Scan {
+    // Add noise to an image. Add a uniformly-distributed random number
+    // up to +/- r * m to each pixel in the image, where m is the largest
+    // value in the image (for normalisation).
+    pub fn add_noise<R: Rng + ?Sized>(&self, rng: &mut R, r: f64) -> Scan {
+        let m = self.data.iter().cloned().fold(0.0, f64::max);
+        let norm_r = r * m;
+        let between = Uniform::new(-norm_r, norm_r);
+        let data = self
+            .data
+            .iter()
+            .zip(between.sample_iter(rng))
+            .map(|(p, r)| p + r)
+            .collect::<Vec<_>>();
+        Scan { data, ..*self }
+    }
+
     // Converts a scan to an image and saves it, perhaps useful for
     // understanding the transform.
     pub fn save(&self, path: &Path) {
