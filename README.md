@@ -18,7 +18,7 @@ This doc is more-or-less a log of how I've reinvented tomography,
 using the code in this repo, with my ideas and lessons learnt along
 the way. In many places I'm playing fast and loose, since I didn't
 want to take up too much time with this (despite having taken a bunch
-of wall time to work on it).
+of wall time to work on it - nearly 2 months end-to-end!).
 
 *Knowledge gained in retrospect that's useful to know as we go along
 will be in italics.*
@@ -399,74 +399,120 @@ in a way that a single number doesn't. For example, if the
 reconstruction is misaligned with the original image by a pixel, the
 error number might not be huge, but it's very clear in the image.
 
-### Back to FFT-based deconvolution
+### Another aside: Mysteriously reduced error
 
 Having decided a small deconvolution kernel was a dead end, I decided
 to go back to full FFT-based deconvolution, and see if I could improve
 on the error in the simple `test_basic_image_deconvolve`
 implementation.
 
-TODO: Rewrite from here on down.
+When I see some coding that I think might be a bit tricky, I tend to
+procrastinate with a little bit of refactoring. This often works well
+- the code is neater and my thoughts are fairly coherent before I
+start laying down the new code. Unfortunately, at the end of my
+refactoring I discovered that the error on the matrix-inversion based
+tests had now massively reduced and I didn't know why! Time for
+investigation.
 
-While refactoring, I've noticed that the reconstruction error of the
-matrix approach has shrunk dramatically since I first wrote the code,
-and don't know why. Something for investigation! All the numbers in
-the error sheet are now wrong.
+A little bit of git-bisection made me realise that switching from
+internally representing images-to-be-saved as `u8` to `f64` removed
+discretisation error that had artificially raised the error in all
+those results. This is the bit I described earlier where I then re-did
+all the error calculations, putting the results in a [new
+sheet](https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=0)
+(the raw data is stored in `analysis/errors.csv`).
 
-And... it turns out to be the discretisation to u8 upon
-reconstruction. Wihout that, the error goes way down in the case where
-it's basically converged.
-
-TODO: Consider regenerating the error data spreadsheet with this
-source of error removed, in order to better see the convergence.
-
-# More work...
-
-Important factors in accuracy:
-
- * Getting the filter aligned on the centre of a pixel
- * Getting the input and output correctly aligned (previous point is basically
-   sub-pixel alignment)
- * And hence, making sure your code works for odd- and even-sized images.
-
-Creating another spreadsheet tracking the error from the
-matrix-inversion approach with a variety of numbers of rays and
-angles, the results are at
-https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=0
-. Interesting to note that now the error doesn't get floored around
+It's interesting to note that the error no longer gets floored around
 0.05 per-pixel, but goes all the way to zero for sufficient rays and
-angles - we get a fully-accurate reconstruction, which makes sense
-when the inverse matrix is fully determined, but is still an
-impressive result. The raw data is stored in analysis/errors.csv.
+angles - we get a fully-accurate reconstruction with matrix-inversion,
+which makes sense when the inverse matrix is fully determined, but I
+still find it an impressive result.
 
-After this, we're implementing deconvolution-based reconstrution in
-the command-line tool. I believe most of the error from this algorithm
-comes from the fact that FFTs assume repeating waveforms are being
-convoluted, when what we're actually trying to (de)convolve is (the
-inverse of) a finite part of a filter that dies off slowly with 1/r,
-and a bounded-size scan. We can reduce this error by increasing the
-size of the scan and the filter around the original image, so that
-asymptotically we approach the non-repeating case. (Some other error
-comes from the frequencies attenuated by the convolution, but we're
-ignoring that.)
+### Really, back to FFT-based deconvolution: Improving alignment
+
+Having got that out of they way, I really dug into tweaks that would
+help reduce the error in deconvolution-based reconstruction.
+
+At this point, I found the most useful tool was to generate a diff
+between the source image and the reconstructed image. Misalignment
+between the input image and the reconstruction shows up nicely as
+positive diff on one edge, and negative on the other.
+
+My first discovery is that the reconstruction I was generating on an
+even-sized image was off by *half a pixel*. This was because the
+filter was even in size, and thus had its centre not pixel-aligned. I
+adjusted the filter to always be centred on a pixel, and that fixed
+the alignment for even-sized images.
+
+This also reminded me to do the tests and play about with the imgaes
+with both odd- and even-sized images, as pixel-perfect alignment
+requires correct rounding. I did find a case where I was off by one
+pixel in one case. As far as I can tell, this was because the
+convolution code shifts the image compared to the original in a
+slightly odd way, and FFT treats the sample points as being at one
+side of the "pixel" rather than in the middle (i.e. the left-most
+sample point is exactly zero, and the right-most point is a pixel
+under 2 pi). These effects seemed to combine, but a quick tweak fixed
+it, aligning the image as I expected.
+
+### Enlarging the filter
+
+Way back, I tried to investigate how big the filter needed to be
+approximate the infinite filter. That lead to the whole "small kernel"
+side track, but I'm facing that problem again. Making the filter
+several times larger than the image (more precisely, 5x in
+`test_image_deconvolve`) seemed to reduce the error - between aligning
+the filter correctly and using a larger filter, I managed to halve RMS
+error. Yay.
+
+### The remaining sources of error
+
+My hypothesis is that remaining error might come down to a few
+sources:
+
+ * Number of rays/angles needed to get a good reconstruction
+ * Size of filter compared to original image
+ * Any inaccuracy in the deconvolution filter, largely from inaccuracy
+   in the generated convolution filter (remember the fudge at the
+   origin?).
+
+As before, my way to investigate the sources of error is to tweak the
+parameters. Deconvolution filter problems aren't quite so easy to
+investigate by tweaking a number, so I didn't tweak that.
+
+I put deconvolution into the command line with
+`--algorithm=deconvolution`, and ran through a number of ray/angles
+and reconstruction image sizd in in the `Makefile` target
+`recon_error_data`. The results are in `analysis/recon_errors.csv`,
+and the
+[sheet](https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=0).
 
 Looking at the error as we vary the rays/angles count and the size of
-the reconstruction image (raw data in analysis/recon_error.csv,
-tabular data in the sheet), we can see that the error flattens off
-around a --recon-multiplier of 2.0, and the error bottoms out when the
-number of rays and angles is roughly twice the image size (for a 32x32
-image, 80 rays and 80 angles actually minimises error, on this
+the reconstruction image, we can see that the error flattens off
+around a `--recon-multiplier` of 2.0, and the error bottoms out when
+the number of rays and angles is roughly twice the image size (for a
+32x32 image, 80 rays and 80 angles actually minimises error, on this
 relatively sparse set of test cases).
 
 As error does not asymptotically head to zero, or even close to that,
 it seems like there's some other source of error. Looking at the diff
 images on the reconstruction of the test image, it's not noise, it's
-the whole of the central question mark being slightly the wrong level,
-even at many rays/angles and a large reconstruction image. So, some
-normalisation step isn't quite right, or there's just some other
-source of error. However, I feel I've got something that's not bad
-now, and am hitting diminishing returns on playing about with this
-thing.
+the whole of the central question mark image being slightly the wrong
+level, even at many rays/angles and a large reconstruction image. So,
+it feels like some normalisation step isn't quite right, or there's
+just some other source of error (like incorrect weights in the
+deconvolution filter).
+
+However, my previous experience with numerical methods is that
+gettting into this in detail is a poatential huge time sink, and I've
+already gone way beyond my original goals, as I think I've got an
+efficient algorithm that works, and the rest is optimisation, right?
+;)
+
+Maybe it's just time to read about the existing algorithms and see how
+I did!
+
+TODO: Tidy up the rest of this doc.
 
 # Switching over: The official algorithm
 
