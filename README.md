@@ -512,59 +512,123 @@ efficient algorithm that works, and the rest is optimisation, right?
 Maybe it's just time to read about the existing algorithms and see how
 I did!
 
-TODO: Tidy up the rest of this doc.
+## The effects of noise on the sinogram
 
-# Switching over: The official algorithm
-
-Watched https://www.youtube.com/watch?v=f0sxjhGHRPo from
-https://twitter.com/sigfpe/status/1441455463439110148 , which also
-talks about back-propagation. I don't tend to get the details of
-mathematical arguments from videos, but it does look suspiciously like
-there's a filter in the frequency domain and a reconstruction across
-all angles. In the video, the filter is applied before the summing
-across all angles. I haven't thought about it too hard, but given
-everything's linear I would expect you could do the integration and
-filter in either order.
-
-Nice to see cutting off the high frequencies to reduce noise is
-included, given the fun I had with finding the deconvolution due to
-attenuated frequencies, mostly in the high-frequency part. The nice
-thing about doing this mathematically is that you get the
-deconvolution filter directly, rather than by inverting the forward
-filter, which I assume improves accuracy.
-
-Moving on to Wikipedia, judging by
-https://en.wikipedia.org/wiki/Tomography, it looks like I've
-reinvented "filtered back projection". It's interesting to see it's a
-relatively noisy approach compared to
-https://en.wikipedia.org/wiki/Iterative_reconstruction. The
-statistical methods look really cool, but I'm not going to spend more
-time on this!
-
-In filtered back projection, looks like I've accidentally reinvented
-back-projection as the integral around each point. The filter to use
-is a "ramp" filter, applied before back-propagation. I will not be
-implementing it.
+*(This is slightly anarchronistic - I actually did this after the next
+section, but I think it makes more sense presented this way.)*
 
 Adding the ability to add noise to the intermediate scan, and varying
-the noise, results are in
-https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=1342061078
-, also analysis/noise_errors.csv, we can see that for large errors
-being added, the RMS error out is proportional to the noise added. As
-there is some base level error in my reconstruction (darn it),
-asymptotically it then goes to that base error as the added noise goes
-to zero.
+the noise, I investigated how noise in the one generated noise in the
+other. Quantitative results were generated with `make
+noise_error_data`, with the results stored in
+`analysis/noise_errors.csv` and [the
+sheet](https://docs.google.com/spreadsheets/d/1I7ISM7KZHVbOBcUQOYR43Fx0JnAHdvksXe5aa2Dl9FE/edit#gid=1342061078).
+We can see that for large errors being added, the RMS error out is
+proportional to the noise added in to the scan. As there is some base
+level error in my reconstruction (darn it), asymptotically it then
+goes to that base error as the added noise goes to zero.
 
-Interestingly, looking at the kind of noise we see in the resulting
-image, having added noise into the scan, it does just look like fairly
-uniform noise - there aren't artefacts like streaky lines or blobby
-errors or anything. This could be because the noise was added
-uniformly to the scan, and if we applied a big impulse of noise in one
-place to the scan we might expect to see weird artefacts in the
-reconstructed image. However, I don't plan to spend the time following
-that up!
+Interestingly, taking the qualitative approach and looking at the kind
+of noise we see in the resulting image, having added noise into the
+scan, it does just look like fairly uniform noise in the image. I was
+expecting perhaps artefacts like streaky lines or blobby errors or
+something, but saw none.
 
-TODO: nonogram!
+This could be because the noise was added uniformly to the scan, and
+if we applied a big impulse of noise in one place to the scan we might
+expect to see weird artefacts in the reconstructed image. However, I'm
+*still* trying to limit my time spent on these investigations, so I'm
+not following up. :)
 
-TODO:
+## Catching up on history
 
+Around the time I was thinking about playing with tomography, there
+were a few tweets on the subject, so I bookmarked them to avoid
+spoilers. Finally, it's time to come back to them.
+
+### What I learnt from YouTube
+
+I watched https://www.youtube.com/watch?v=f0sxjhGHRPo , linked from
+https://twitter.com/sigfpe/status/1441455463439110148 . While I'm not
+going to get a rigorous understanding from a quick YouTube video, it
+does look suspiciously like there's a filter in the frequency domain
+and a reconstruction across all angles. In the video, the filter is
+applied before the summing across all angles. I haven't thought about
+it too hard, but given everything's linear I would expect you could do
+the integration and filter in either order.
+
+It's nice to see that the removal of the high frequencies to avoid
+noise is included, given the fun I had with finding the deconvolution
+due to attenuated frequencies, mostly in the high-frequency part.
+
+It's nice to see how you can build the deconvolution filter (the
+"ramp") algebraically, rather than by numerically inverting an
+approximation to a filter with a singularity in it. I assume this
+significantly reduces the error involved.
+
+### What I learnt from Wikipedia
+
+I then headed over to Wikpedia to pretty much cover the same material
+at my leisure. https://en.wikipedia.org/wiki/Tomography, it looks like
+I've reinvented "filtered back projection" as described in
+https://en.wikipedia.org/wiki/Tomographic_reconstruction. It's
+interesting to see it's a relatively noisy approach compared to
+https://en.wikipedia.org/wiki/Iterative_reconstruction. The
+statistical methods look really cool, but I'm done on this project for
+now!
+
+Much of the same content seems to appear on
+https://en.wikipedia.org/wiki/Radon_transform.
+
+## Conclusions and follow-up
+
+All docs need a good conclusions section, right? While I've never been
+deeply into numerical methods, it's been a reminder of how important
+getting corner cases are, and how much faff a "simple" thing can be in
+practice. It was also quite a lot of fun to reinvent an algorithm from
+scratch, knowing little more than the fact it can be done, even if you
+don't know how.
+
+### Follow-ups
+
+I am pretty much out of energy on this project, at least for now, but
+there are several obvious things that would be cool to play with,
+given infinite time and patience.
+
+In particular, it would be nice to:
+
+ * Work out the maths behind building the deconvolution filter
+   algebraically.
+ * Work out the precise relationship between doing the filter before
+   and after the back-projection.
+ * Implement the textbook filtered back-projection algorithm.
+ * Find the errors on the different algorithms for the standard
+   "phantom" test cases.
+ * Look at the effect of highly localised noise in scans on the
+   reconstructed image.
+ * Learn about and implement iterative reconstruction algorithms.
+
+### Library thanks
+
+Coding this project in Rust has been fun. I like the safe,
+strongly-typed, expressive language. I'm sure I'm supposed to do this
+stuff in Python, but there you go. The project has been made a lot
+easier by a few neat libraries:
+
+ * **nalgebra** Linear algebra, like matrix (pseudo)inversion.
+ * **rustfft** Fourier transforms for convolution and deconvolution.
+ * **image** Loading and saving images.
+ * **clap** You wouldn't believe how annoying I find command-line
+   processing without a decent library like this. Pretty much, I'd
+   rather just hard-code the options in the source.
+ * **anyhow** A simple and well-structured way to have reasonable
+   error-handling in my binary.
+
+### A random thought
+
+The "See also" section of https://en.wikipedia.org/wiki/Tomography
+mentions "Nonogram, a type of puzzle based on a discrete model of
+tomography", which just happens to be the last little toy project
+project I worked on -
+https://github.com/simon-frankau/nonogram-solver. Perhaps tomography
+had been playing on my mind subconsciously.
