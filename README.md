@@ -1,5 +1,8 @@
 # Reinventing tomography
 
+![Original image to sinogram to approximation of original
+image](./header.png)
+
 I knew nothing about Radon transforms beyond the name, and the vague
 idea of how tomography works, by piecing together the original structure
 from scans through it. However, it's always fascinated me, and since
@@ -407,8 +410,8 @@ on the error in the simple `test_basic_image_deconvolve`
 implementation.
 
 When I see some coding that I think might be a bit tricky, I tend to
-procrastinate with a little bit of refactoring. This often works well
-- the code is neater and my thoughts are fairly coherent before I
+procrastinate with a little bit of refactoring. This often works
+well - the code is neater and my thoughts are fairly coherent before I
 start laying down the new code. Unfortunately, at the end of my
 refactoring I discovered that the error on the matrix-inversion based
 tests had now massively reduced and I didn't know why! Time for
